@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "@lucide/vue": "^1.53.0",
+    "naive-ui": "^2.45.3",
+    "vue": "^3.5.43"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.4",
+    "vue-tsc": "^2.2.12"
+  },
+  "name": "ainovel-web",
+  "scripts": {
+    "dev": "vite --config src/ainovel/frontend/vite.config.ts src/ainovel/frontend --host 127.0.0.1",
+    "build": "vite build --config src/ainovel/frontend/vite.config.ts src/ainovel/frontend",
+    "typecheck": "vue-tsc --noEmit -p src/ainovel/frontend/tsconfig.json",
+    "openapi": "openapi-typescript src/ainovel/frontend/openapi.json -o src/ainovel/frontend/src/api/schema.d.ts"
+  }
+}

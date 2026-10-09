@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>角色访谈 · 纸间</title><link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme.css">
+<link rel="stylesheet" href="/assets/process-records.css">
+<script type="module" src="/assets/theme.js"></script>
+<script type="module" src="/assets/character.js"></script></head>
+<body><header><a class="brand" href="/">纸间<span>角色访谈</span></a><span id="meta"></span><button id="undo" title="按整部小说的操作顺序撤回">撤回上一步</button><button id="theme-toggle" aria-label="切换暗黑模式">☾ 暗黑</button></header>
+<div style="max-width:960px;margin:35px auto;padding:0 22px">
+  <h1 id="name" style="font-family:var(--serif)"></h1><p class="hint">这个会话绑定你点击时的故事版本和场景，采访不会改变正文。</p>
+  <div class="session-layout"><nav class="session-list"><button id="new-session">＋ 新会话</button><div id="sessions"></div></nav>
+    <section><div id="chat-meta" class="chat-meta"></div><div id="messages"></div>
+    <form id="form"><textarea id="message" placeholder="你想问此时的角色什么？" required></textarea><button type="submit">发送 ↗</button></form></section>
+  </div>
+</div><div id="toast" role="alert" hidden></div></body>
+</html>

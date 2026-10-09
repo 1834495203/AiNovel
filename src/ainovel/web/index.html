@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>纸间 · AI 小说工作室</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <link rel="stylesheet" href="/assets/workspace.css">
+  <link rel="stylesheet" href="/assets/bookshelf.css">
+  <link rel="stylesheet" href="/assets/records.css">
+  <link rel="stylesheet" href="/assets/process-records.css">
+  <script type="module" src="/assets/theme.js"></script>
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <header><a class="brand" href="/">纸间<span>AI 小说工作室</span></a><span id="health">连接中…</span><button id="theme-toggle" aria-label="切换暗黑模式">☾ 暗黑</button><button id="new-story">＋ 新故事</button></header>
+  <section id="bookshelf" class="bookshelf" aria-label="书架">
+    <div class="shelf-heading"><div><div class="eyebrow">纸间 · 你的创作空间</div><h1>你的书架</h1><p class="hint">打开一本小说，继续它的故事。</p></div><button id="trash">回收站</button></div>
+    <nav id="stories" class="book-grid" aria-label="小说"></nav>
+    <h2 class="draft-label">创作草稿</h2><nav id="drafts" class="book-grid" aria-label="创作草稿"></nav>
+  </section>
+  <main id="workspace" hidden>
+    <aside class="contents" id="contents"><div class="contents-heading"><h2>故事目录</h2><button id="close-contents" class="mobile-tools" aria-label="关闭目录">×</button></div><nav id="story-contents" aria-label="章节与场景"></nav></aside>
+    <section class="writing-workspace" aria-label="故事与创作对话">
+    <div class="reading-area">
+    <section class="reader"><div class="reader-bar"><div><div class="workspace-navigation"><button id="back-shelf">← 书架</button><button id="toggle-contents" class="mobile-tools" aria-controls="contents" aria-expanded="false">目录</button></div><h1 id="title">故事，从一个想法开始。</h1></div><div class="reader-actions"><button id="undo" title="连续撤回最近一次完整操作">撤回上一步</button><button id="story-discussion">故事讨论</button><button id="character-cards">角色卡</button><button id="versions">版本历史</button><button id="delete-story" class="danger" disabled>删除小说</button></div></div>
+      <div id="novel"><div class="empty"><span>✦</span><h2>先认识你的故事</h2><p>聊聊世界、人物，以及你想读到的文字。<br>确认设定后，我们一起写下第一幕。</p><button id="begin">开始创作</button></div></div>
+      <section id="writing-draft" class="writing-draft" aria-label="待确认草稿" hidden></section>
+    </section>
+      <div id="selection-tools" hidden><span>已选中文字</span><button id="rewrite-selection">讨论修改</button><button id="clear-selection">×</button></div>
+    <section id="chat-panel" class="conversation" aria-label="创作对话" hidden>
+      <div class="conversation-head"><div><h2>创作对话</h2><span>一起推敲故事，决定接下来发生什么。</span></div><button id="close-chat" aria-label="关闭创作对话">收起 ↓</button></div>
+      <details id="creation-progress" class="creation-progress" open hidden></details>
+      <div id="messages" class="messages" aria-live="polite"></div>
+    </section>
+    </div>
+    <div class="composer">
+      <div class="composer-meta"><button id="toggle-chat" type="button" aria-controls="chat-panel" aria-expanded="false">创作对话 ↑</button><button id="toggle-tools" class="mobile-tools" type="button" aria-controls="studio" aria-expanded="false">创作辅助</button><div id="status" role="status">准备好开始新的故事</div></div>
+      <form id="chat-form"><label for="chat-input" class="sr-only">创作指令</label><textarea id="chat-input" placeholder="告诉 AI 你的想法，或让故事继续……" rows="2" required></textarea><button type="submit">发送 ↗</button><p class="hint">AI 会判断章节节奏，也可以直接说「另起一章」。</p></form>
+    </div>
+    </section>
+    <aside class="studio" id="studio" aria-label="创作辅助">
+      <div class="tabs"><button id="tab-records">故事设定</button><button id="tab-direction" class="active">创作备注</button><button id="close-tools" class="mobile-tools" aria-label="关闭创作辅助">×</button></div>
+      <section id="records-panel" class="panel" hidden><select id="record-category" aria-label="设定分类"><option value="world">世界观</option><option value="preferences">读者偏好</option><option value="writer">AI 工作台</option><option value="characters">角色资料</option></select><div id="story-records"></div></section>
+      <section id="direction-panel" class="panel"><p class="hint">备注供后续写作参考，保存不会生成正文。</p><div id="directions"></div><form id="direction-form"><textarea id="direction-input" placeholder="例如：克制表达，不要在这一幕揭露真相。" required></textarea><select id="direction-scope"><option value="global">全局</option><option value="future">后续故事</option><option value="scene">下一个场景</option><option value="chapter">当前章节</option></select><label class="check"><input id="direction-hard" type="checkbox">必须遵守</label><button type="submit">保存备注</button></form></section>
+    </aside>
+  </main>
+  <dialog id="modal"><div class="dialog-head"><h2 id="modal-title"></h2><button id="modal-close">×</button></div><div id="modal-body"></div></dialog>
+  <div id="toast" role="alert" hidden></div>
+</body>
+</html>
