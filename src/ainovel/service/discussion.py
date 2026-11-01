@@ -12,13 +12,12 @@ from ainovel.core.discussion import (
     ReplyAction,
     SearchStoryAction,
     StartDiscussionRequest,
-    UpdateSettingsAction,
 )
 from ainovel.core.domain import CommandOutput, CommandSubmission, Event, Trace
 from ainovel.core.errors import ConflictError
 from ainovel.mapper.discussions import DiscussionRepository
 from ainovel.service.commands import Handler
-from ainovel.service.discussion_tools import apply_settings, context_story
+from ainovel.service.discussion_tools import context_story
 from ainovel.service.prompt_templates import resolve_command_template
 
 
@@ -60,8 +59,6 @@ class DiscussionHandler(Handler[DiscussionRequest]):
         working = latest.story.model_copy(deep=True)
         results: list[DiscussionToolResult] = []
         for _ in range(self.services.settings.discussion_max_steps):
-            if (await store.head(submission.story_id)).revision_id != latest.revision_id:
-                raise ConflictError("讨论期间小说已更新，本轮未保存修改。请重试以读取最新状态。")
             context = DiscussionContext(
                 story=context_story(working, latest.revision_id, self.services.settings.recent_scenes),
                 history=history,
@@ -72,26 +69,15 @@ class DiscussionHandler(Handler[DiscussionRequest]):
                 context, submission.id, prompt_template=prompt_template
             )
             if isinstance(action, ReplyAction):
-                if (await store.head(submission.story_id)).revision_id != latest.revision_id:
-                    raise ConflictError("小说已更新，本轮未保存修改。请重试以读取最新状态。")
-                changed = working != latest.story
                 result = DiscussionResult(
-                    session_id=request.session_id,
-                    reply=action.reply,
-                    read_revision_id=latest.revision_id,
-                    settings_changed=changed,
-                    tool_results=results,
+                    session_id=request.session_id, reply=action.reply,
+                    read_revision_id=latest.revision_id, settings_changed=False, tool_results=results,
                 )
-                if changed:
-                    effective = submission.model_copy(update={"base_revision_id": latest.revision_id})
-                    return await self.services.commit(
-                        effective, working, "故事讨论：更新设定与角色，正文保持原样", discussion=result
-                    )
                 return CommandOutput(story_id=submission.story_id, discussion=result, message="讨论已保存")
             summary = (
                 "按需召回小说内容"
                 if isinstance(action, SearchStoryAction)
-                else "暂存设定修改，本轮完成后统一保存"
+                else "拒绝修改：故事讨论只读"
             )
             await store.append_event(
                 Event(
@@ -112,22 +98,8 @@ class DiscussionHandler(Handler[DiscussionRequest]):
                     message=f"召回 {len(chunks)} 条内容，已去重并按故事时间排序",
                     excerpts=[DiscussionExcerpt(title=chunk.kind, text=chunk.content) for chunk in chunks],
                 )
-            elif isinstance(action, UpdateSettingsAction):
-                try:
-                    candidate = apply_settings(working, action.arguments)
-                    changed = candidate != working
-                    working = candidate
-                    outcome = DiscussionToolResult(
-                        name="update_story_settings",
-                        message=action.arguments.reason
-                        + ("；已暂存，本轮完成后保存" if changed else "；未产生新变更"),
-                    )
-                except ValueError as error:
-                    outcome = DiscussionToolResult(
-                        name="update_story_settings", success=False, message=str(error)
-                    )
             else:
-                raise ValueError("未知讨论工具")
+                raise ValueError("故事讨论只能查询和讨论；资料修改请回到写幕流程，本轮未修改任何资料")
             results.append(outcome)
             await store.append_event(
                 Event(

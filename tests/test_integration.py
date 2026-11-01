@@ -42,6 +42,10 @@ from ainovel.mapper.models import (
     ChunkRow,
     CommandRow,
     EventRow,
+    FieldChangeRow,
+    FieldSnapshotRow,
+    FieldTemplateRow,
+    FieldTemplateSetRow,
     OperationRow,
     PromptTemplateBindingRow,
     PromptTemplateVersionRow,
@@ -131,9 +135,13 @@ class Harness:
                 )
                 revision_ids = select(RevisionRow.id).where(RevisionRow.story_id == self.story_id)
                 await session.execute(delete(ChunkRow).where(ChunkRow.revision_id.in_(revision_ids)))
+                await session.execute(delete(FieldChangeRow).where(FieldChangeRow.story_id == self.story_id))
+                await session.execute(delete(FieldSnapshotRow).where(FieldSnapshotRow.story_id == self.story_id))
                 await session.execute(delete(RevisionRow).where(RevisionRow.story_id == self.story_id))
                 await session.execute(delete(StoryRow).where(StoryRow.id == self.story_id))
             await session.execute(delete(EventRow).where(EventRow.command_id.in_(self.ids)))
+            await session.execute(delete(FieldTemplateRow).where(FieldTemplateRow.command_id.in_(self.ids)))
+            await session.execute(delete(FieldTemplateSetRow).where(FieldTemplateSetRow.command_id.in_(self.ids)))
             await session.execute(delete(OperationRow).where(OperationRow.command_id.in_(self.ids)))
             await session.execute(delete(CommandRow).where(CommandRow.id.in_(self.ids)))
         for command_id in self.ids:

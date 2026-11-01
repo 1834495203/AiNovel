@@ -58,16 +58,15 @@ test("Vue reader and materials use the synthetic story fixture and preserve Unic
       if (request.method() !== "GET") {
         const path = new URL(request.url()).pathname;
         const body = request.postDataJSON();
-        if (path !== "/api/commands" || body.payload?.kind !== "update_story") {
+        if (path !== "/api/commands" || body.payload?.kind !== "edit_fields" || body.payload.target.scope !== "world") {
           postRequests.push({ method: request.method(), url: request.url() });
           return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: "仅允许更新本测试内存中的合成资料" }) });
         }
         postRequests.push(body);
-        const patch = body.payload.patch.world?.entries;
+        const patch = body.payload.patch;
         const nextEntries = [...currentView.story.world.entries.filter(item => !patch?.remove?.includes(item.id)), ...(patch?.upsert ?? [])];
         currentView = { ...currentView, revision_id: randomUUID(), story: { ...currentView.story,
-          world: { ...currentView.story.world, ...(body.payload.patch.world?.premise === undefined ? {} : { premise: body.payload.patch.world.premise }),
-            entries: nextEntries } } };
+          world: { ...currentView.story.world, entries: nextEntries } } };
         const result = { submission: body, status: "completed", output: { message: "合成资料已保存", story_deleted: false,
           story_restored: false, need: null, writing_draft: null, rewrite: null, revision_id: currentView.revision_id }, undone: false };
         currentCommands = [...currentCommands, result];
@@ -77,6 +76,8 @@ test("Vue reader and materials use the synthetic story fixture and preserve Unic
       const json = value => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
       if (path === "/api/stories") return json([{ id: storyId, title: story.title, revision_id: revisionId, scene_count: 2 }]);
       if (path === "/api/drafts") return json([]);
+      if (path === "/api/field-templates") return json({ session_id: randomUUID(), templates: [] });
+      if (path === `/api/stories/${storyId}/fields`) return json({ revision_id: currentView.revision_id, target: { scope: "world" }, entries: currentView.story.world.entries });
       if (path === "/health") return json({ database: true, redis: true, worker: true, provider: "mock", model: "mock" });
       if (path === `/api/stories/${storyId}`) return json(currentView);
       if (path === `/api/stories/${storyId}/commands`) return json(currentCommands);
@@ -166,19 +167,20 @@ test("Vue reader and materials use the synthetic story fixture and preserve Unic
     await page.waitForTimeout(250);
     await page.getByRole("button", { name: /故事资料/ }).click();
     await page.locator(".story-materials").waitFor();
-    await page.getByRole("heading", { name: "世界设定" }).waitFor();
-    assert.match(await page.locator(".materials-explainer").textContent(), /已有正文不会自动改写/);
+    await page.getByRole("heading", { name: "字段模板", exact: true }).waitFor();
     await page.getByRole("button", { name: "添加条目", exact: true }).click();
-    await page.getByLabel("条目名称").fill("临时合成条目");
+    await page.getByRole("button", { name: "添加字段", exact: true }).click();
+    await page.getByPlaceholder("字段名称").fill("临时合成条目");
     assert.equal(postRequests.length, 0, "未点击保存时不得提交资料修改");
-    await page.getByRole("button", { name: "保存条目", exact: true }).click();
+    await page.getByRole("button", { name: "保存字段", exact: true }).click();
     await page.getByText("临时合成条目", { exact: true }).waitFor();
     assert.equal(postRequests.length, 1);
-    assert.equal(postRequests[0].payload.patch.world.entries.upsert.length, 1);
-    assert.equal(postRequests[0].payload.patch.world.entries.remove.length, 0);
+    assert.equal(postRequests[0].payload.patch.upsert.length, 1);
+    assert.equal(postRequests[0].payload.target.scope, "world");
     assert.equal(postRequests[0].payload.patch.preferences, undefined, "世界观单条修改不应覆盖其他资料");
     assert.equal(postRequests[0].payload.patch.writer, undefined, "世界观单条修改不应覆盖计划" );
     const storyRoute = `story/${storyId}`;
+    await page.locator(".n-drawer").filter({ hasText: "已发生事实、未来剧情计划和创作策略各自保存。" }).locator(".n-drawer-header .n-base-close").first().click();
     await page.getByRole("button", { name: "小说工作区", exact: true }).click();
     await page.locator(".novel-reader").waitFor();
     assert.equal(page.url().split("#")[1], storyRoute, "目录滚动不能覆盖工作台路由 hash");
@@ -198,6 +200,6 @@ test("Vue reader and materials use the synthetic story fixture and preserve Unic
     assert.ok(overflow.width <= 391, `窄屏正文不能产生横向溢出：${JSON.stringify(overflow)}`);
     assert.ok(await page.locator(".directory-pane").isVisible(), "目录保持为独立面板");
     assert.deepEqual(pageErrors, []);
-    assert.ok(postRequests.every(item => item.payload?.patch?.world?.entries?.upsert?.[0]?.name === "临时合成条目"));
+    assert.ok(postRequests.every(item => item.payload?.patch?.upsert?.[0]?.name === "临时合成条目"));
   } finally { await browser.close(); }
 });

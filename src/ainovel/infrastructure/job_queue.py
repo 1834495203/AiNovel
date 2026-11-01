@@ -37,5 +37,15 @@ class JobQueue:
         except RedisError:
             return False
 
+    async def remove(self, command_ids: list[UUID]) -> None:
+        if not command_ids:
+            return
+        async with self.redis.pipeline(transaction=True) as pipeline:
+            for command_id in command_ids:
+                pipeline.lrem(self.waiting, 0, str(command_id))
+                pipeline.lrem(self.processing, 0, str(command_id))
+                pipeline.delete(self.marker(command_id))
+            await pipeline.execute()
+
     async def close(self) -> None:
         await self.redis.aclose()

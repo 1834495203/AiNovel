@@ -8,9 +8,11 @@ from pydantic import Field
 
 from ainovel.core.base import Model
 from ainovel.core.characters import Alias, ProfilePatch, Snapshot, StatePatch
+from ainovel.core.fields import FieldTarget
 from ainovel.core.records import (
     CollectionPatch,
     CustomField,
+    Entry,
     ReaderPreferences,
     StoryMetadataPatch,
     WorldSetting,
@@ -61,13 +63,24 @@ class UpdateSettingsAction(Model):
     arguments: UpdateSettingsArguments
 
 
+class EditFieldsArguments(Model):
+    target: FieldTarget
+    patch: CollectionPatch[Entry]
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class EditFieldsAction(Model):
+    kind: Literal["edit_fields"] = "edit_fields"
+    arguments: EditFieldsArguments
+
+
 class ReplyAction(Model):
     kind: Literal["reply"] = "reply"
     reply: str = Field(min_length=1, max_length=30000)
 
 
 DiscussionAction = Annotated[
-    SearchStoryAction | UpdateSettingsAction | ReplyAction, Field(discriminator="kind")
+    SearchStoryAction | UpdateSettingsAction | EditFieldsAction | ReplyAction, Field(discriminator="kind")
 ]
 
 
@@ -83,6 +96,12 @@ class DiscussionCharacter(Model):
     snapshot: Snapshot
 
 
+class DiscussionFields(Model):
+    target: FieldTarget
+    name: str
+    entries: list[Entry]
+
+
 class DiscussionStory(Model):
     title: str
     revision_id: UUID
@@ -92,6 +111,7 @@ class DiscussionStory(Model):
     characters: list[DiscussionCharacter]
     custom_fields: list[CustomField]
     recent_scenes: list[DiscussionExcerpt]
+    field_documents: list[DiscussionFields] = Field(default_factory=list)
 
 
 class DiscussionTurn(Model):
@@ -100,7 +120,7 @@ class DiscussionTurn(Model):
 
 
 class DiscussionToolResult(Model):
-    name: Literal["search_story", "update_story_settings"]
+    name: Literal["search_story", "update_story_settings", "edit_fields"]
     success: bool = True
     message: str
     excerpts: list[DiscussionExcerpt] = Field(default_factory=list)

@@ -13,6 +13,7 @@ from ainovel.mapper.models import (
     EventRow,
     OperationRow,
     PromptTemplateBindingRow,
+    ResourceDeletionRow,
     SetupDraftRow,
     StoryRow,
 )
@@ -58,7 +59,7 @@ class UndoService:
             )
 
     async def execute(self, submission: CommandSubmission, request: UndoRequest) -> CommandOutput:
-        scope_id = submission.story_id or submission.session_id
+        scope_id = request.scope_id or submission.story_id or submission.session_id
         if scope_id is None:
             raise ValueError("撤回需要小说或创建会话")
         async with self.store.sessions.begin() as session:
@@ -67,6 +68,12 @@ class UndoService:
             if operation is None or operation.id != request.expected_operation_id:
                 raise ConflictError("最新操作已变化，请刷新后再次撤回")
             operations = [operation]
+            if scope_id != (submission.story_id or submission.session_id):
+                original = await session.get(CommandRow, operation.command_id)
+                if (original is None or original.story_id != submission.story_id
+                    or original.payload.payload.kind not in ("discussion", "start_discussion", "character_chat", "start_character_chat")
+                    or original.payload.payload.session_id != scope_id or operation.before.story_id is not None):
+                    raise ConflictError("撤回范围不属于此只读会话")
             if request.target_command_id:
                 if request.target_command_id != operation.command_id:
                     raise ConflictError("只能撤回最新操作，请按顺序逐次撤回")
@@ -82,7 +89,7 @@ class UndoService:
             # have an old or malformed checkpoint; loading every queued command
             # would deserialize that unrelated state before the Python filter.
             pending_query = pending_query.where(
-                CommandRow.story_id == scope_id
+                CommandRow.story_id == submission.story_id
                 if submission.story_id is not None
                 else CommandRow.story_id.is_(None)
             )
@@ -90,7 +97,7 @@ class UndoService:
             for row in pending:
                 if row.payload.payload.kind in ("undo", "save_setup_draft"):
                     continue
-                same_scope = row.story_id == scope_id or row.payload.session_id == scope_id
+                same_scope = row.payload.operation_scope_id == scope_id
                 if not same_scope:
                     continue
                 await session.refresh(row, with_for_update=True)
@@ -100,7 +107,7 @@ class UndoService:
                     raise ConflictError("当前操作尚未完成，请完成后撤回")
             story = (
                 await session.get(StoryRow, submission.story_id, with_for_update=True)
-                if submission.story_id
+                if submission.story_id and operation.before.story_id is not None
                 else None
             )
             if story and story.head_id != submission.base_revision_id:
@@ -174,6 +181,16 @@ class UndoService:
         story: StoryRow | None,
     ) -> None:
         before = operation.before
+        await self.store.check_resource(session, operation.scope_id, allow_deleted=True)
+        if before.draft_id is not None:
+            barrier = await session.get(ResourceDeletionRow, before.draft_id)
+            if before.draft_deleted:
+                if barrier is None:
+                    session.add(ResourceDeletionRow(id=before.draft_id, status="deleted"))
+                else:
+                    barrier.status = "deleted"
+            elif barrier is not None:
+                await session.delete(barrier)
         if before.story_existed:
             if story is None or before.head_id is None:
                 raise ValueError("撤回存档缺失")

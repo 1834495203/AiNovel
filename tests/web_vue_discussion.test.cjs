@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
 const { test } = require("node:test");
 
-test("Vue discussion restores drafts and separates sessions with centralized recovery", {
+test("Vue discussion restores drafts and separates sessions with conversation-tail actions", {
   skip: !process.env.AINOVEL_BROWSER_TEST,
 }, async () => {
   const { chromium } = require(process.env.AINOVEL_PLAYWRIGHT_PATH || "playwright");
@@ -28,7 +28,7 @@ test("Vue discussion restores drafts and separates sessions with centralized rec
         if (path === `/api/stories/${storyId}/discussions`) return json(route, sessions);
         const sessionHistory = path.match(new RegExp(`/api/stories/${storyId}/discussions/([^/]+)/commands$`));
         if (sessionHistory) return json(route, bySession.get(sessionHistory[1]) || []);
-        if (path === `/api/undo/${storyId}`) return json(route, { available: undoAvailable, operation_id: 12, command_ids: [...all.keys()], message: "合成撤回" });
+        if (path.startsWith("/api/undo/")) return json(route, { available: undoAvailable, operation_id: 12, command_id: [...all.values()].filter(item => !item.undone && item.submission.payload.session_id === path.split("/").at(-1)).at(-1)?.submission.id, command_ids: [...all.keys()], message: "合成撤回" });
         if (path.includes("/events")) return json(route, [{ id: 3 }]);
         const commandMatch = path.match(/\/api\/commands\/([^/]+)$/);
         if (commandMatch && all.has(commandMatch[1])) return json(route, all.get(commandMatch[1]));
@@ -46,7 +46,7 @@ test("Vue discussion restores drafts and separates sessions with centralized rec
       }
       if (payload.kind === "undo") {
         undoAvailable = false;
-        const last = [...all.values()].filter(item => !item.undone).at(-1);
+        const last = all.get(payload.target_command_id);
         if (last) last.undone = true;
         return json(route, { submission: body, status: "completed", output: { message: "合成撤回完成" }, undone: false });
       }
@@ -62,9 +62,9 @@ test("Vue discussion restores drafts and separates sessions with centralized rec
       return json(route, command);
     });
 
-    await page.goto(`/discussion?story=${storyId}&session=${firstSessionId}`);
+    await page.goto(`/#discussion/${storyId}?session=${firstSessionId}`);
     await page.locator(".discussion-workspace").waitFor();
-    const composer = page.getByPlaceholder("聊聊后续剧情，或明确告诉 AI 要修改哪些资料…");
+    const composer = page.getByPlaceholder("聊聊后续剧情、人物或世界规则…");
     await composer.fill("失败后也要保留的输入");
     await page.getByRole("button", { name: "发送" }).click();
     await page.getByText("合成的临时失败").waitFor();
@@ -72,7 +72,7 @@ test("Vue discussion restores drafts and separates sessions with centralized rec
     await page.reload();
     await page.getByText("合成的临时失败").waitFor();
     assert.equal(await composer.inputValue(), "失败后也要保留的输入", "刷新后恢复未成功发送的输入");
-    assert.equal(await page.getByRole("button", { name: /撤回|重试/ }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "重试", exact: true }).count(), 1);
 
     await page.getByRole("button", { name: "新建讨论" }).click();
     await page.locator(".discussion-workspace").waitFor();
@@ -81,7 +81,12 @@ test("Vue discussion restores drafts and separates sessions with centralized rec
     await page.getByRole("button", { name: "发送" }).click();
     await page.getByText("已保存的合成讨论回复").waitFor();
     assert.equal(await composer.inputValue(), "", "服务已接受命令后清除输入草稿");
-    assert.equal(await page.getByRole("button", { name: /撤回/ }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "回退", exact: true }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: /运行历史/ }).count(), 0);
+    await page.getByRole("button", { name: "回退", exact: true }).click();
+    await page.getByText("已保存的合成讨论回复", { exact: true }).waitFor({ state: "hidden" });
+    assert.equal(writes.at(-1).payload.scope_id, sessions[0].id);
+    assert.equal(bySession.get(firstSessionId)[0].undone, false, "其他会话消息保留");
     assert.ok(writes.every(item => item.story_id === storyId || item.story_id == null));
     assert.deepEqual(pageErrors, []);
   } finally { await browser.close(); }

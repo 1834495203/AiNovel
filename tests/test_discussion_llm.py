@@ -10,6 +10,7 @@ from ainovel.core.discussion import (
     DiscussionContext,
     DiscussionStory,
     DiscussionTurn,
+    EditFieldsAction,
     ReplyAction,
     SearchStoryAction,
     UpdateSettingsAction,
@@ -47,7 +48,7 @@ def context() -> DiscussionContext:
     )
 
 
-@pytest.mark.parametrize("kind", ["reply", "search_story", "update_story_settings"])
+@pytest.mark.parametrize("kind", ["reply", "search_story", "update_story_settings", "edit_fields"])
 async def test_native_optional_discussion_tools_and_normal_chat_history(kind: str) -> None:
     sink = Sink()
     model = OpenAIModel(
@@ -63,6 +64,8 @@ async def test_native_optional_discussion_tools_and_normal_chat_history(kind: st
             if kind == "search_story"
             else '{"reason":"用户要求","patch":{"world":{"premise":"新都市"}}}'
         )
+        if kind == "edit_fields":
+            arguments = '{"target":{"scope":"writer"},"patch":{"upsert":[{"name":"天气记录","value":"雨"}]},"reason":"用户要求"}'
         message = ProviderMessage(
             role="assistant",
             tool_calls=[ToolCall(id="call1", function=FunctionCall(name=kind, arguments=arguments))],
@@ -81,6 +84,12 @@ async def test_native_optional_discussion_tools_and_normal_chat_history(kind: st
         transport=httpx.MockTransport(respond), base_url="https://api.deepseek.com/v1/"
     )
     try:
+        if kind in ("update_story_settings", "edit_fields"):
+            from ainovel.llm.errors import StructuredOutputError
+            with pytest.raises(StructuredOutputError):
+                await model.choose_discussion_tool(context(), uuid4())
+            assert [item.function.name for item in requests[0].tools] == ["search_story"]
+            return
         result = await model.choose_discussion_tool(context(), uuid4())
         assert isinstance(
             result,
@@ -88,11 +97,12 @@ async def test_native_optional_discussion_tools_and_normal_chat_history(kind: st
                 "reply": ReplyAction,
                 "search_story": SearchStoryAction,
                 "update_story_settings": UpdateSettingsAction,
+                "edit_fields": EditFieldsAction,
             }[kind],
         )
         assert requests[0].tool_choice == "auto" and requests[0].thinking.type == "disabled"
-        assert [item.function.name for item in requests[0].tools] == ["search_story", "update_story_settings"]
-        assert "讨论与设定助手" in requests[0].messages[0].content
+        assert [item.function.name for item in requests[0].tools] == ["search_story"]
+        assert "只读讨论助手" in requests[0].messages[0].content
         assert requests[0].messages[1].content.startswith("协议约束：")
         assert requests[0].messages[2].content == "我喜欢慢热"
         assert requests[0].messages[3].role == "assistant"

@@ -5,6 +5,263 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/field-templates": {
+      "get": {
+        "summary": "Field Templates",
+        "operationId": "field_templates_api_field_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldTemplateLibrary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stories/{story_id}/field-template-set": {
+      "get": {
+        "summary": "Local Field Schema",
+        "operationId": "local_field_schema_api_stories__story_id__field_template_set_get",
+        "parameters": [
+          {
+            "name": "story_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Story Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldTemplateSet-Output"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stories/{story_id}/field-template-set/export": {
+      "post": {
+        "summary": "Export Field Schema",
+        "operationId": "export_field_schema_api_stories__story_id__field_template_set_export_post",
+        "parameters": [
+          {
+            "name": "story_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Story Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportStoryFieldSchemaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldTemplateSet-Output"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stories/{story_id}/fields": {
+      "get": {
+        "summary": "Fields",
+        "operationId": "fields_api_stories__story_id__fields_get",
+        "parameters": [
+          {
+            "name": "story_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Story Id"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "story",
+                "world",
+                "character",
+                "state",
+                "preferences",
+                "writer",
+                "chapter",
+                "scene"
+              ],
+              "type": "string",
+              "title": "Scope"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldDocumentView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stories/{story_id}/field-history": {
+      "get": {
+        "summary": "Fields History",
+        "operationId": "fields_history_api_stories__story_id__field_history_get",
+        "parameters": [
+          {
+            "name": "story_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Story Id"
+            }
+          },
+          {
+            "name": "revision_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FieldChangeEvent"
+                  },
+                  "title": "Response Fields History Api Stories  Story Id  Field History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/stories/{story_id}/discussions": {
       "get": {
         "summary": "Discussion Sessions",
@@ -595,6 +852,44 @@
             }
           }
         }
+      },
+      "delete": {
+        "summary": "Purge Story",
+        "operationId": "purge_story_api_stories__story_id__delete",
+        "parameters": [
+          {
+            "name": "story_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Story Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/undo/{scope_id}": {
@@ -685,17 +980,39 @@
       "get": {
         "summary": "Drafts",
         "operationId": "drafts_api_drafts_get",
+        "parameters": [
+          {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Deleted"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/SetupDraft-Output"
                   },
-                  "type": "array",
                   "title": "Response Drafts Api Drafts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -704,6 +1021,44 @@
       }
     },
     "/api/drafts/{draft_id}": {
+      "delete": {
+        "summary": "Purge Draft",
+        "operationId": "purge_draft_api_drafts__draft_id__delete",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "summary": "Draft",
         "operationId": "draft_api_drafts__draft_id__get",
@@ -1138,6 +1493,37 @@
         ],
         "title": "Alias"
       },
+      "ApplyFieldTemplateRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "apply_field_template",
+            "title": "Kind",
+            "default": "apply_field_template"
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Id"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/FieldTarget"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Targets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template_id",
+          "targets"
+        ],
+        "title": "ApplyFieldTemplateRequest"
+      },
       "Change": {
         "properties": {
           "category": {
@@ -1233,6 +1619,13 @@
             "type": "string",
             "title": "Summary",
             "default": ""
+          },
+          "custom_fields": {
+            "items": {
+              "$ref": "#/components/schemas/Entry-Output"
+            },
+            "type": "array",
+            "title": "Custom Fields"
           }
         },
         "additionalProperties": false,
@@ -2216,6 +2609,26 @@
               }
             ]
           },
+          "field_template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldTemplate-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "field_template_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldTemplateSet-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "recovered_command_id": {
             "anyOf": [
               {
@@ -2357,6 +2770,9 @@
                 "$ref": "#/components/schemas/SaveSetupDraftRequest-Input"
               },
               {
+                "$ref": "#/components/schemas/SetSetupDraftDeletedRequest"
+              },
+              {
                 "$ref": "#/components/schemas/UpdateStoryRequest-Input"
               },
               {
@@ -2364,6 +2780,24 @@
               },
               {
                 "$ref": "#/components/schemas/SavePromptTemplateRequest"
+              },
+              {
+                "$ref": "#/components/schemas/SaveFieldTemplateRequest-Input"
+              },
+              {
+                "$ref": "#/components/schemas/ApplyFieldTemplateRequest"
+              },
+              {
+                "$ref": "#/components/schemas/EditFieldsRequest-Input"
+              },
+              {
+                "$ref": "#/components/schemas/SaveFieldTemplateSetRequest-Input"
+              },
+              {
+                "$ref": "#/components/schemas/InitializeStoryTemplateSetRequest"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateStoryFieldSchemaRequest-Input"
               }
             ],
             "title": "Payload",
@@ -2371,12 +2805,15 @@
               "propertyName": "kind",
               "mapping": {
                 "accept_rewrite": "#/components/schemas/AcceptRewriteRequest",
+                "apply_field_template": "#/components/schemas/ApplyFieldTemplateRequest",
                 "character_chat": "#/components/schemas/CharacterChatRequest",
                 "create_story": "#/components/schemas/CreateStoryRequest-Input",
                 "delete_story": "#/components/schemas/DeleteStoryRequest",
                 "direction": "#/components/schemas/DirectionRequest",
                 "discussion": "#/components/schemas/DiscussionRequest",
+                "edit_fields": "#/components/schemas/EditFieldsRequest-Input",
                 "generate": "#/components/schemas/GenerateRequest-Input",
+                "initialize_story_template_set": "#/components/schemas/InitializeStoryTemplateSetRequest",
                 "interview": "#/components/schemas/InterviewRequest",
                 "recover_command": "#/components/schemas/RecoverCommandRequest",
                 "reindex": "#/components/schemas/ReindexRequest",
@@ -2386,12 +2823,16 @@
                 "revert": "#/components/schemas/RevertRequest",
                 "review_draft": "#/components/schemas/ReviewDraftRequest",
                 "rewrite": "#/components/schemas/RewriteRequest",
+                "save_field_template": "#/components/schemas/SaveFieldTemplateRequest-Input",
+                "save_field_template_set": "#/components/schemas/SaveFieldTemplateSetRequest-Input",
                 "save_prompt_template": "#/components/schemas/SavePromptTemplateRequest",
                 "save_setup_draft": "#/components/schemas/SaveSetupDraftRequest-Input",
+                "set_setup_draft_deleted": "#/components/schemas/SetSetupDraftDeletedRequest",
                 "start_character_chat": "#/components/schemas/StartCharacterChatRequest",
                 "start_discussion": "#/components/schemas/StartDiscussionRequest",
                 "undo": "#/components/schemas/UndoRequest",
-                "update_story": "#/components/schemas/UpdateStoryRequest-Input"
+                "update_story": "#/components/schemas/UpdateStoryRequest-Input",
+                "update_story_field_schema": "#/components/schemas/UpdateStoryFieldSchemaRequest-Input"
               }
             }
           }
@@ -2512,6 +2953,9 @@
                 "$ref": "#/components/schemas/SaveSetupDraftRequest-Output"
               },
               {
+                "$ref": "#/components/schemas/SetSetupDraftDeletedRequest"
+              },
+              {
                 "$ref": "#/components/schemas/UpdateStoryRequest-Output"
               },
               {
@@ -2519,6 +2963,24 @@
               },
               {
                 "$ref": "#/components/schemas/SavePromptTemplateRequest"
+              },
+              {
+                "$ref": "#/components/schemas/SaveFieldTemplateRequest-Output"
+              },
+              {
+                "$ref": "#/components/schemas/ApplyFieldTemplateRequest"
+              },
+              {
+                "$ref": "#/components/schemas/EditFieldsRequest-Output"
+              },
+              {
+                "$ref": "#/components/schemas/SaveFieldTemplateSetRequest-Output"
+              },
+              {
+                "$ref": "#/components/schemas/InitializeStoryTemplateSetRequest"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateStoryFieldSchemaRequest-Output"
               }
             ],
             "title": "Payload",
@@ -2526,12 +2988,15 @@
               "propertyName": "kind",
               "mapping": {
                 "accept_rewrite": "#/components/schemas/AcceptRewriteRequest",
+                "apply_field_template": "#/components/schemas/ApplyFieldTemplateRequest",
                 "character_chat": "#/components/schemas/CharacterChatRequest",
                 "create_story": "#/components/schemas/CreateStoryRequest-Output",
                 "delete_story": "#/components/schemas/DeleteStoryRequest",
                 "direction": "#/components/schemas/DirectionRequest",
                 "discussion": "#/components/schemas/DiscussionRequest",
+                "edit_fields": "#/components/schemas/EditFieldsRequest-Output",
                 "generate": "#/components/schemas/GenerateRequest-Output",
+                "initialize_story_template_set": "#/components/schemas/InitializeStoryTemplateSetRequest",
                 "interview": "#/components/schemas/InterviewRequest",
                 "recover_command": "#/components/schemas/RecoverCommandRequest",
                 "reindex": "#/components/schemas/ReindexRequest",
@@ -2541,12 +3006,16 @@
                 "revert": "#/components/schemas/RevertRequest",
                 "review_draft": "#/components/schemas/ReviewDraftRequest",
                 "rewrite": "#/components/schemas/RewriteRequest",
+                "save_field_template": "#/components/schemas/SaveFieldTemplateRequest-Output",
+                "save_field_template_set": "#/components/schemas/SaveFieldTemplateSetRequest-Output",
                 "save_prompt_template": "#/components/schemas/SavePromptTemplateRequest",
                 "save_setup_draft": "#/components/schemas/SaveSetupDraftRequest-Output",
+                "set_setup_draft_deleted": "#/components/schemas/SetSetupDraftDeletedRequest",
                 "start_character_chat": "#/components/schemas/StartCharacterChatRequest",
                 "start_discussion": "#/components/schemas/StartDiscussionRequest",
                 "undo": "#/components/schemas/UndoRequest",
-                "update_story": "#/components/schemas/UpdateStoryRequest-Output"
+                "update_story": "#/components/schemas/UpdateStoryRequest-Output",
+                "update_story_field_schema": "#/components/schemas/UpdateStoryFieldSchemaRequest-Output"
               }
             }
           }
@@ -2634,6 +3103,26 @@
             "type": "boolean",
             "const": true,
             "title": "Confirmed"
+          },
+          "field_template_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Field Template Ids"
+          },
+          "field_template_set_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Template Set Id"
           }
         },
         "additionalProperties": false,
@@ -2659,6 +3148,26 @@
             "type": "boolean",
             "const": true,
             "title": "Confirmed"
+          },
+          "field_template_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Field Template Ids"
+          },
+          "field_template_set_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Template Set Id"
           }
         },
         "additionalProperties": false,
@@ -3031,7 +3540,8 @@
             "type": "string",
             "enum": [
               "search_story",
-              "update_story_settings"
+              "update_story_settings",
+              "edit_fields"
             ],
             "title": "Name"
           },
@@ -3148,6 +3658,64 @@
         ],
         "title": "DraftSelection"
       },
+      "EditFieldsRequest-Input": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "edit_fields",
+            "title": "Kind",
+            "default": "edit_fields"
+          },
+          "target": {
+            "$ref": "#/components/schemas/FieldTarget"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/CollectionPatch_Entry_-Input"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason",
+            "default": "更新自定义字段"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target",
+          "patch"
+        ],
+        "title": "EditFieldsRequest"
+      },
+      "EditFieldsRequest-Output": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "edit_fields",
+            "title": "Kind",
+            "default": "edit_fields"
+          },
+          "target": {
+            "$ref": "#/components/schemas/FieldTarget"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/CollectionPatch_Entry_-Output"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason",
+            "default": "更新自定义字段"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target",
+          "patch"
+        ],
+        "title": "EditFieldsRequest"
+      },
       "Entry-Input": {
         "properties": {
           "id": {
@@ -3208,6 +3776,16 @@
               }
             ],
             "title": "Source Scene Id"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldDefinition-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3277,6 +3855,16 @@
               }
             ],
             "title": "Source Scene Id"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldDefinition-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3436,6 +4024,616 @@
           "event"
         ],
         "title": "Experience"
+      },
+      "ExportStoryFieldSchemaRequest": {
+        "properties": {
+          "revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/FieldTarget"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Targets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision_id",
+          "name"
+        ],
+        "title": "ExportStoryFieldSchemaRequest",
+        "description": "Read-only projection; the caller saves it as an independent library command."
+      },
+      "FieldChangeEvent": {
+        "properties": {
+          "revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Id"
+          },
+          "story_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Story Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "command_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Command Id"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor",
+            "default": "user"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Depth"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "default": 1
+          },
+          "patches": {
+            "items": {
+              "$ref": "#/components/schemas/ValuePatch"
+            },
+            "type": "array",
+            "title": "Patches"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision_id",
+          "story_id",
+          "parent_id",
+          "command_id",
+          "reason",
+          "depth",
+          "patches"
+        ],
+        "title": "FieldChangeEvent"
+      },
+      "FieldDefinition-Input": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "boolean",
+              "enum",
+              "object",
+              "list",
+              "reference"
+            ],
+            "title": "Type",
+            "default": "text"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": false
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/FieldDefinition-Input"
+            },
+            "type": "array",
+            "title": "Children"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldDefinition-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "allow_extra": {
+            "type": "boolean",
+            "title": "Allow Extra",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "FieldDefinition"
+      },
+      "FieldDefinition-Output": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "boolean",
+              "enum",
+              "object",
+              "list",
+              "reference"
+            ],
+            "title": "Type",
+            "default": "text"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": false
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/FieldDefinition-Output"
+            },
+            "type": "array",
+            "title": "Children"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldDefinition-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "allow_extra": {
+            "type": "boolean",
+            "title": "Allow Extra",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "FieldDefinition"
+      },
+      "FieldDocumentView": {
+        "properties": {
+          "revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Id"
+          },
+          "target": {
+            "$ref": "#/components/schemas/FieldTarget"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/Entry-Output"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision_id",
+          "target",
+          "entries"
+        ],
+        "title": "FieldDocumentView"
+      },
+      "FieldTarget": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "story",
+              "world",
+              "character",
+              "state",
+              "preferences",
+              "writer",
+              "chapter",
+              "scene"
+            ],
+            "title": "Scope"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "title": "FieldTarget"
+      },
+      "FieldTemplate-Input": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "story",
+              "world",
+              "character",
+              "state",
+              "preferences",
+              "writer",
+              "chapter",
+              "scene"
+            ],
+            "title": "Scope"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldDefinition-Input"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "builtin": {
+            "type": "boolean",
+            "title": "Builtin",
+            "default": false
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "scope"
+        ],
+        "title": "FieldTemplate"
+      },
+      "FieldTemplate-Output": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "story",
+              "world",
+              "character",
+              "state",
+              "preferences",
+              "writer",
+              "chapter",
+              "scene"
+            ],
+            "title": "Scope"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldDefinition-Output"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "builtin": {
+            "type": "boolean",
+            "title": "Builtin",
+            "default": false
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "scope"
+        ],
+        "title": "FieldTemplate"
+      },
+      "FieldTemplateLibrary": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id",
+            "default": "1a6bfd9a-3006-56e1-b49a-8b210012bfc2"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/FieldTemplate-Output"
+            },
+            "type": "array",
+            "title": "Templates"
+          },
+          "template_sets": {
+            "items": {
+              "$ref": "#/components/schemas/FieldTemplateSet-Output"
+            },
+            "type": "array",
+            "title": "Template Sets",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "templates"
+        ],
+        "title": "FieldTemplateLibrary"
+      },
+      "FieldTemplateSet-Input": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/FieldTemplate-Input"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Templates"
+          },
+          "builtin": {
+            "type": "boolean",
+            "title": "Builtin",
+            "default": false
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "replaces_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "FieldTemplateSet",
+        "description": "A complete starting structure, copied into each novel instead of live-bound."
+      },
+      "FieldTemplateSet-Output": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/FieldTemplate-Output"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Templates"
+          },
+          "builtin": {
+            "type": "boolean",
+            "title": "Builtin",
+            "default": false
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "replaces_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "FieldTemplateSet",
+        "description": "A complete starting structure, copied into each novel instead of live-bound."
       },
       "Foreshadow-Input": {
         "properties": {
@@ -3865,6 +5063,27 @@
         ],
         "title": "HistoryTarget"
       },
+      "InitializeStoryTemplateSetRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "initialize_story_template_set",
+            "title": "Kind",
+            "default": "initialize_story_template_set"
+          },
+          "template_set_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Set Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template_set_id"
+        ],
+        "title": "InitializeStoryTemplateSetRequest"
+      },
       "InterviewRequest": {
         "properties": {
           "kind": {
@@ -3917,6 +5136,7 @@
         ],
         "title": "InterviewResult"
       },
+      "JsonValue": {},
       "OutlineBeat-Input": {
         "properties": {
           "id": {
@@ -4072,6 +5292,29 @@
           "name"
         ],
         "title": "OutlineBeat"
+      },
+      "PatchPart": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "key",
+              "item"
+            ],
+            "title": "Kind",
+            "default": "key"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "PatchPart"
       },
       "PlotThread-Input": {
         "properties": {
@@ -4391,6 +5634,9 @@
       },
       "PreferencePatch-Input": {
         "properties": {
+          "entries": {
+            "$ref": "#/components/schemas/CollectionPatch_Entry_-Input"
+          },
           "likes": {
             "$ref": "#/components/schemas/CollectionPatch_Preference_-Input"
           },
@@ -4407,6 +5653,9 @@
       },
       "PreferencePatch-Output": {
         "properties": {
+          "entries": {
+            "$ref": "#/components/schemas/CollectionPatch_Entry_-Output"
+          },
           "likes": {
             "$ref": "#/components/schemas/CollectionPatch_Preference_-Output"
           },
@@ -4982,28 +6231,37 @@
         ],
         "title": "PromptTemplateVersion"
       },
+      "PurgeResult": {
+        "properties": {
+          "command_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Command Ids"
+          },
+          "cache_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Cache Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PurgeResult"
+      },
       "ReaderPreferences-Input": {
         "properties": {
-          "likes": {
-            "items": {
-              "$ref": "#/components/schemas/Preference-Input"
-            },
-            "type": "array",
-            "title": "Likes"
-          },
-          "dislikes": {
-            "items": {
-              "$ref": "#/components/schemas/Preference-Input"
-            },
-            "type": "array",
-            "title": "Dislikes"
-          },
-          "custom_fields": {
+          "entries": {
             "items": {
               "$ref": "#/components/schemas/Entry-Input"
             },
             "type": "array",
-            "title": "Custom Fields"
+            "title": "Entries"
           }
         },
         "additionalProperties": false,
@@ -5012,30 +6270,45 @@
       },
       "ReaderPreferences-Output": {
         "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/Entry-Output"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
           "likes": {
             "items": {
               "$ref": "#/components/schemas/Preference-Output"
             },
             "type": "array",
-            "title": "Likes"
+            "title": "Likes",
+            "readOnly": true
           },
           "dislikes": {
             "items": {
               "$ref": "#/components/schemas/Preference-Output"
             },
             "type": "array",
-            "title": "Dislikes"
+            "title": "Dislikes",
+            "readOnly": true
           },
           "custom_fields": {
             "items": {
               "$ref": "#/components/schemas/Entry-Output"
             },
             "type": "array",
-            "title": "Custom Fields"
+            "title": "Custom Fields",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
         "type": "object",
+        "required": [
+          "likes",
+          "dislikes",
+          "custom_fields"
+        ],
         "title": "ReaderPreferences"
       },
       "RecoverCommandRequest": {
@@ -5226,6 +6499,11 @@
       },
       "ReviewDraftRequest": {
         "properties": {
+          "text_only": {
+            "type": "boolean",
+            "title": "Text Only",
+            "default": false
+          },
           "kind": {
             "type": "string",
             "const": "review_draft",
@@ -5819,6 +7097,106 @@
         ],
         "title": "RunStep"
       },
+      "SaveFieldTemplateRequest-Input": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "save_field_template",
+            "title": "Kind",
+            "default": "save_field_template"
+          },
+          "template": {
+            "$ref": "#/components/schemas/FieldTemplate-Input"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template"
+        ],
+        "title": "SaveFieldTemplateRequest"
+      },
+      "SaveFieldTemplateRequest-Output": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "save_field_template",
+            "title": "Kind",
+            "default": "save_field_template"
+          },
+          "template": {
+            "$ref": "#/components/schemas/FieldTemplate-Output"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template"
+        ],
+        "title": "SaveFieldTemplateRequest"
+      },
+      "SaveFieldTemplateSetRequest-Input": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "save_field_template_set",
+            "title": "Kind",
+            "default": "save_field_template_set"
+          },
+          "template_set": {
+            "$ref": "#/components/schemas/FieldTemplateSet-Input"
+          },
+          "replace_template_set_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replace Template Set Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template_set"
+        ],
+        "title": "SaveFieldTemplateSetRequest"
+      },
+      "SaveFieldTemplateSetRequest-Output": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "save_field_template_set",
+            "title": "Kind",
+            "default": "save_field_template_set"
+          },
+          "template_set": {
+            "$ref": "#/components/schemas/FieldTemplateSet-Output"
+          },
+          "replace_template_set_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replace Template Set Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template_set"
+        ],
+        "title": "SaveFieldTemplateSetRequest"
+      },
       "SavePromptTemplateRequest": {
         "properties": {
           "kind": {
@@ -5979,6 +7357,13 @@
               }
             ],
             "title": "Source Command Id"
+          },
+          "custom_fields": {
+            "items": {
+              "$ref": "#/components/schemas/Entry-Output"
+            },
+            "type": "array",
+            "title": "Custom Fields"
           }
         },
         "additionalProperties": false,
@@ -5990,6 +7375,26 @@
           "summary"
         ],
         "title": "Scene"
+      },
+      "SetSetupDraftDeletedRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "set_setup_draft_deleted",
+            "title": "Kind",
+            "default": "set_setup_draft_deleted"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "title": "SetSetupDraftDeletedRequest"
       },
       "SetupDraft-Input": {
         "properties": {
@@ -6048,6 +7453,26 @@
             "minimum": 0.0,
             "title": "Save Event Id",
             "default": 0
+          },
+          "field_template_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Field Template Ids"
+          },
+          "field_template_set_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Template Set Id"
           }
         },
         "additionalProperties": false,
@@ -6114,6 +7539,26 @@
             "minimum": 0.0,
             "title": "Save Event Id",
             "default": 0
+          },
+          "field_template_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Field Template Ids"
+          },
+          "field_template_set_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Template Set Id"
           }
         },
         "additionalProperties": false,
@@ -6323,6 +7768,16 @@
             },
             "type": "array",
             "title": "Custom Fields"
+          },
+          "field_template_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldTemplateSet-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -6597,6 +8052,18 @@
       },
       "UndoRequest": {
         "properties": {
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
           "kind": {
             "type": "string",
             "const": "undo",
@@ -6680,6 +8147,54 @@
         "additionalProperties": false,
         "type": "object",
         "title": "UndoState"
+      },
+      "UpdateStoryFieldSchemaRequest-Input": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "update_story_field_schema",
+            "title": "Kind",
+            "default": "update_story_field_schema"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/FieldTemplate-Input"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Templates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "templates"
+        ],
+        "title": "UpdateStoryFieldSchemaRequest"
+      },
+      "UpdateStoryFieldSchemaRequest-Output": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "update_story_field_schema",
+            "title": "Kind",
+            "default": "update_story_field_schema"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/FieldTemplate-Output"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Templates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "templates"
+        ],
+        "title": "UpdateStoryFieldSchemaRequest"
       },
       "UpdateStoryRequest-Input": {
         "properties": {
@@ -6831,6 +8346,35 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ValuePatch": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "set",
+              "remove",
+              "order"
+            ],
+            "title": "Op"
+          },
+          "path": {
+            "items": {
+              "$ref": "#/components/schemas/PatchPart"
+            },
+            "type": "array",
+            "title": "Path"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "op"
+        ],
+        "title": "ValuePatch"
       },
       "WorkingDraft-Input": {
         "properties": {
@@ -7024,11 +8568,6 @@
       },
       "WorldSetting-Input": {
         "properties": {
-          "premise": {
-            "type": "string",
-            "title": "Premise",
-            "default": ""
-          },
           "entries": {
             "items": {
               "$ref": "#/components/schemas/Entry-Input"
@@ -7043,21 +8582,24 @@
       },
       "WorldSetting-Output": {
         "properties": {
-          "premise": {
-            "type": "string",
-            "title": "Premise",
-            "default": ""
-          },
           "entries": {
             "items": {
               "$ref": "#/components/schemas/Entry-Output"
             },
             "type": "array",
             "title": "Entries"
+          },
+          "premise": {
+            "type": "string",
+            "title": "Premise",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
         "type": "object",
+        "required": [
+          "premise"
+        ],
         "title": "WorldSetting"
       },
       "WriterNote-Input": {
@@ -7170,6 +8712,9 @@
       },
       "WriterPatch-Input": {
         "properties": {
+          "entries": {
+            "$ref": "#/components/schemas/CollectionPatch_Entry_-Input"
+          },
           "mainlines": {
             "$ref": "#/components/schemas/CollectionPatch_PlotThread_-Input"
           },
@@ -7223,6 +8768,9 @@
       },
       "WriterPatch-Output": {
         "properties": {
+          "entries": {
+            "$ref": "#/components/schemas/CollectionPatch_Entry_-Output"
+          },
           "mainlines": {
             "$ref": "#/components/schemas/CollectionPatch_PlotThread_-Output"
           },
@@ -7276,75 +8824,102 @@
       },
       "WriterWorkspace": {
         "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/Entry-Output"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
           "mainlines": {
             "items": {
               "$ref": "#/components/schemas/PlotThread-Output"
             },
             "type": "array",
-            "title": "Mainlines"
+            "title": "Mainlines",
+            "readOnly": true
           },
           "subplots": {
             "items": {
               "$ref": "#/components/schemas/PlotThread-Output"
             },
             "type": "array",
-            "title": "Subplots"
+            "title": "Subplots",
+            "readOnly": true
           },
           "foreshadows": {
             "items": {
               "$ref": "#/components/schemas/Foreshadow-Output"
             },
             "type": "array",
-            "title": "Foreshadows"
+            "title": "Foreshadows",
+            "readOnly": true
           },
           "outline": {
             "items": {
               "$ref": "#/components/schemas/OutlineBeat-Output"
             },
             "type": "array",
-            "title": "Outline"
+            "title": "Outline",
+            "readOnly": true
           },
           "future_directions": {
             "items": {
               "$ref": "#/components/schemas/PlotThread-Output"
             },
             "type": "array",
-            "title": "Future Directions"
+            "title": "Future Directions",
+            "readOnly": true
           },
           "notes": {
             "items": {
               "$ref": "#/components/schemas/WriterNote-Output"
             },
             "type": "array",
-            "title": "Notes"
+            "title": "Notes",
+            "readOnly": true
           },
           "drafts": {
             "items": {
               "$ref": "#/components/schemas/WorkingDraft-Output"
             },
             "type": "array",
-            "title": "Drafts"
+            "title": "Drafts",
+            "readOnly": true
           },
           "progress": {
             "type": "string",
             "title": "Progress",
-            "default": ""
+            "readOnly": true
           },
           "current_user_intent": {
             "type": "string",
             "title": "Current User Intent",
-            "default": ""
+            "readOnly": true
           },
           "custom_fields": {
             "items": {
               "$ref": "#/components/schemas/Entry-Output"
             },
             "type": "array",
-            "title": "Custom Fields"
+            "title": "Custom Fields",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
         "type": "object",
+        "required": [
+          "mainlines",
+          "subplots",
+          "foreshadows",
+          "outline",
+          "future_directions",
+          "notes",
+          "drafts",
+          "progress",
+          "current_user_intent",
+          "custom_fields"
+        ],
         "title": "WriterWorkspace"
       },
       "WritingDraft": {

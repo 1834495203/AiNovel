@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/field-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Field Templates */
+        get: operations["field_templates_api_field_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stories/{story_id}/field-template-set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Local Field Schema */
+        get: operations["local_field_schema_api_stories__story_id__field_template_set_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stories/{story_id}/field-template-set/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Field Schema */
+        post: operations["export_field_schema_api_stories__story_id__field_template_set_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stories/{story_id}/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fields */
+        get: operations["fields_api_stories__story_id__fields_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stories/{story_id}/field-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fields History */
+        get: operations["fields_history_api_stories__story_id__field_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stories/{story_id}/discussions": {
         parameters: {
             query?: never;
@@ -222,7 +307,8 @@ export interface paths {
         get: operations["story_api_stories__story_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Purge Story */
+        delete: operations["purge_story_api_stories__story_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -290,7 +376,8 @@ export interface paths {
         get: operations["draft_api_drafts__draft_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Purge Draft */
+        delete: operations["purge_draft_api_drafts__draft_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -450,6 +537,21 @@ export interface components {
             /** Used By Character Id */
             used_by_character_id?: string | null;
         };
+        /** ApplyFieldTemplateRequest */
+        ApplyFieldTemplateRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "apply_field_template";
+            /**
+             * Template Id
+             * Format: uuid
+             */
+            template_id: string;
+            /** Targets */
+            targets: components["schemas"]["FieldTarget"][];
+        };
         /** Change */
         Change: {
             /**
@@ -492,6 +594,8 @@ export interface components {
              * @default
              */
             summary: string;
+            /** Custom Fields */
+            custom_fields?: components["schemas"]["Entry-Output"][];
         };
         /** Character */
         Character: {
@@ -853,6 +957,8 @@ export interface components {
             undone_command_ids?: string[];
             writing_draft?: components["schemas"]["WritingDraft"] | null;
             prompt_template?: components["schemas"]["PromptTemplateVersion"] | null;
+            field_template?: components["schemas"]["FieldTemplate-Output"] | null;
+            field_template_set?: components["schemas"]["FieldTemplateSet-Output"] | null;
             /** Recovered Command Id */
             recovered_command_id?: string | null;
             /** Recovery Decision */
@@ -878,7 +984,7 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
             /** Payload */
-            payload: components["schemas"]["InterviewRequest"] | components["schemas"]["CreateStoryRequest-Input"] | components["schemas"]["GenerateRequest-Input"] | components["schemas"]["DirectionRequest"] | components["schemas"]["RewriteRequest"] | components["schemas"]["AcceptRewriteRequest"] | components["schemas"]["RejectRewriteRequest"] | components["schemas"]["ResolveCharacterRequest-Input"] | components["schemas"]["RevertRequest"] | components["schemas"]["ReindexRequest"] | components["schemas"]["DeleteStoryRequest"] | components["schemas"]["RestoreStoryRequest"] | components["schemas"]["CharacterChatRequest"] | components["schemas"]["StartCharacterChatRequest"] | components["schemas"]["DiscussionRequest"] | components["schemas"]["StartDiscussionRequest"] | components["schemas"]["UndoRequest"] | components["schemas"]["RecoverCommandRequest"] | components["schemas"]["SaveSetupDraftRequest-Input"] | components["schemas"]["UpdateStoryRequest-Input"] | components["schemas"]["ReviewDraftRequest"] | components["schemas"]["SavePromptTemplateRequest"];
+            payload: components["schemas"]["InterviewRequest"] | components["schemas"]["CreateStoryRequest-Input"] | components["schemas"]["GenerateRequest-Input"] | components["schemas"]["DirectionRequest"] | components["schemas"]["RewriteRequest"] | components["schemas"]["AcceptRewriteRequest"] | components["schemas"]["RejectRewriteRequest"] | components["schemas"]["ResolveCharacterRequest-Input"] | components["schemas"]["RevertRequest"] | components["schemas"]["ReindexRequest"] | components["schemas"]["DeleteStoryRequest"] | components["schemas"]["RestoreStoryRequest"] | components["schemas"]["CharacterChatRequest"] | components["schemas"]["StartCharacterChatRequest"] | components["schemas"]["DiscussionRequest"] | components["schemas"]["StartDiscussionRequest"] | components["schemas"]["UndoRequest"] | components["schemas"]["RecoverCommandRequest"] | components["schemas"]["SaveSetupDraftRequest-Input"] | components["schemas"]["SetSetupDraftDeletedRequest"] | components["schemas"]["UpdateStoryRequest-Input"] | components["schemas"]["ReviewDraftRequest"] | components["schemas"]["SavePromptTemplateRequest"] | components["schemas"]["SaveFieldTemplateRequest-Input"] | components["schemas"]["ApplyFieldTemplateRequest"] | components["schemas"]["EditFieldsRequest-Input"] | components["schemas"]["SaveFieldTemplateSetRequest-Input"] | components["schemas"]["InitializeStoryTemplateSetRequest"] | components["schemas"]["UpdateStoryFieldSchemaRequest-Input"];
         };
         /** CommandSubmission */
         "CommandSubmission-Output": {
@@ -900,7 +1006,7 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
             /** Payload */
-            payload: components["schemas"]["InterviewRequest"] | components["schemas"]["CreateStoryRequest-Output"] | components["schemas"]["GenerateRequest-Output"] | components["schemas"]["DirectionRequest"] | components["schemas"]["RewriteRequest"] | components["schemas"]["AcceptRewriteRequest"] | components["schemas"]["RejectRewriteRequest"] | components["schemas"]["ResolveCharacterRequest-Output"] | components["schemas"]["RevertRequest"] | components["schemas"]["ReindexRequest"] | components["schemas"]["DeleteStoryRequest"] | components["schemas"]["RestoreStoryRequest"] | components["schemas"]["CharacterChatRequest"] | components["schemas"]["StartCharacterChatRequest"] | components["schemas"]["DiscussionRequest"] | components["schemas"]["StartDiscussionRequest"] | components["schemas"]["UndoRequest"] | components["schemas"]["RecoverCommandRequest"] | components["schemas"]["SaveSetupDraftRequest-Output"] | components["schemas"]["UpdateStoryRequest-Output"] | components["schemas"]["ReviewDraftRequest"] | components["schemas"]["SavePromptTemplateRequest"];
+            payload: components["schemas"]["InterviewRequest"] | components["schemas"]["CreateStoryRequest-Output"] | components["schemas"]["GenerateRequest-Output"] | components["schemas"]["DirectionRequest"] | components["schemas"]["RewriteRequest"] | components["schemas"]["AcceptRewriteRequest"] | components["schemas"]["RejectRewriteRequest"] | components["schemas"]["ResolveCharacterRequest-Output"] | components["schemas"]["RevertRequest"] | components["schemas"]["ReindexRequest"] | components["schemas"]["DeleteStoryRequest"] | components["schemas"]["RestoreStoryRequest"] | components["schemas"]["CharacterChatRequest"] | components["schemas"]["StartCharacterChatRequest"] | components["schemas"]["DiscussionRequest"] | components["schemas"]["StartDiscussionRequest"] | components["schemas"]["UndoRequest"] | components["schemas"]["RecoverCommandRequest"] | components["schemas"]["SaveSetupDraftRequest-Output"] | components["schemas"]["SetSetupDraftDeletedRequest"] | components["schemas"]["UpdateStoryRequest-Output"] | components["schemas"]["ReviewDraftRequest"] | components["schemas"]["SavePromptTemplateRequest"] | components["schemas"]["SaveFieldTemplateRequest-Output"] | components["schemas"]["ApplyFieldTemplateRequest"] | components["schemas"]["EditFieldsRequest-Output"] | components["schemas"]["SaveFieldTemplateSetRequest-Output"] | components["schemas"]["InitializeStoryTemplateSetRequest"] | components["schemas"]["UpdateStoryFieldSchemaRequest-Output"];
         };
         /** CommandView */
         CommandView: {
@@ -940,6 +1046,10 @@ export interface components {
              * @constant
              */
             confirmed: true;
+            /** Field Template Ids */
+            field_template_ids?: string[];
+            /** Field Template Set Id */
+            field_template_set_id?: string | null;
         };
         /** CreateStoryRequest */
         "CreateStoryRequest-Output": {
@@ -954,6 +1064,10 @@ export interface components {
              * @constant
              */
             confirmed: true;
+            /** Field Template Ids */
+            field_template_ids?: string[];
+            /** Field Template Set Id */
+            field_template_set_id?: string | null;
         };
         /** CreationField */
         CreationField: {
@@ -1149,7 +1263,7 @@ export interface components {
              * Name
              * @enum {string}
              */
-            name: "search_story" | "update_story_settings";
+            name: "search_story" | "update_story_settings" | "edit_fields";
             /**
              * Success
              * @default true
@@ -1193,6 +1307,36 @@ export interface components {
             /** Selected Text */
             selected_text: string;
         };
+        /** EditFieldsRequest */
+        "EditFieldsRequest-Input": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "edit_fields";
+            target: components["schemas"]["FieldTarget"];
+            patch: components["schemas"]["CollectionPatch_Entry_-Input"];
+            /**
+             * Reason
+             * @default 更新自定义字段
+             */
+            reason: string;
+        };
+        /** EditFieldsRequest */
+        "EditFieldsRequest-Output": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "edit_fields";
+            target: components["schemas"]["FieldTarget"];
+            patch: components["schemas"]["CollectionPatch_Entry_-Output"];
+            /**
+             * Reason
+             * @default 更新自定义字段
+             */
+            reason: string;
+        };
         /** Entry */
         "Entry-Input": {
             /**
@@ -1218,6 +1362,7 @@ export interface components {
             children?: components["schemas"]["Entry-Input"][];
             /** Source Scene Id */
             source_scene_id?: string | null;
+            definition?: components["schemas"]["FieldDefinition-Input"] | null;
         };
         /** Entry */
         "Entry-Output": {
@@ -1244,6 +1389,7 @@ export interface components {
             children?: components["schemas"]["Entry-Output"][];
             /** Source Scene Id */
             source_scene_id?: string | null;
+            definition?: components["schemas"]["FieldDefinition-Output"] | null;
         };
         /** Event */
         Event: {
@@ -1311,6 +1457,292 @@ export interface components {
             keywords?: string[];
             /** Entries */
             entries?: components["schemas"]["Entry-Output"][];
+        };
+        /**
+         * ExportStoryFieldSchemaRequest
+         * @description Read-only projection; the caller saves it as an independent library command.
+         */
+        ExportStoryFieldSchemaRequest: {
+            /**
+             * Revision Id
+             * Format: uuid
+             */
+            revision_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Targets */
+            targets?: components["schemas"]["FieldTarget"][];
+        };
+        /** FieldChangeEvent */
+        FieldChangeEvent: {
+            /**
+             * Revision Id
+             * Format: uuid
+             */
+            revision_id: string;
+            /**
+             * Story Id
+             * Format: uuid
+             */
+            story_id: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /**
+             * Command Id
+             * Format: uuid
+             */
+            command_id: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Actor
+             * @default user
+             */
+            actor: string;
+            /** Depth */
+            depth: number;
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            /** Patches */
+            patches: components["schemas"]["ValuePatch"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+        };
+        /** FieldDefinition */
+        "FieldDefinition-Input": {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Type
+             * @default text
+             * @enum {string}
+             */
+            type: "text" | "number" | "boolean" | "enum" | "object" | "list" | "reference";
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Options */
+            options?: string[];
+            /** Children */
+            children?: components["schemas"]["FieldDefinition-Input"][];
+            item?: components["schemas"]["FieldDefinition-Input"] | null;
+            /**
+             * Allow Extra
+             * @default true
+             */
+            allow_extra: boolean;
+        };
+        /** FieldDefinition */
+        "FieldDefinition-Output": {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Type
+             * @default text
+             * @enum {string}
+             */
+            type: "text" | "number" | "boolean" | "enum" | "object" | "list" | "reference";
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Options */
+            options?: string[];
+            /** Children */
+            children?: components["schemas"]["FieldDefinition-Output"][];
+            item?: components["schemas"]["FieldDefinition-Output"] | null;
+            /**
+             * Allow Extra
+             * @default true
+             */
+            allow_extra: boolean;
+        };
+        /** FieldDocumentView */
+        FieldDocumentView: {
+            /**
+             * Revision Id
+             * Format: uuid
+             */
+            revision_id: string;
+            target: components["schemas"]["FieldTarget"];
+            /** Entries */
+            entries: components["schemas"]["Entry-Output"][];
+        };
+        /** FieldTarget */
+        FieldTarget: {
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "story" | "world" | "character" | "state" | "preferences" | "writer" | "chapter" | "scene";
+            /** Entity Id */
+            entity_id?: string | null;
+        };
+        /** FieldTemplate */
+        "FieldTemplate-Input": {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "story" | "world" | "character" | "state" | "preferences" | "writer" | "chapter" | "scene";
+            /** Fields */
+            fields?: components["schemas"]["FieldDefinition-Input"][];
+            /**
+             * Builtin
+             * @default false
+             */
+            builtin: boolean;
+            /** Parent Id */
+            parent_id?: string | null;
+        };
+        /** FieldTemplate */
+        "FieldTemplate-Output": {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "story" | "world" | "character" | "state" | "preferences" | "writer" | "chapter" | "scene";
+            /** Fields */
+            fields?: components["schemas"]["FieldDefinition-Output"][];
+            /**
+             * Builtin
+             * @default false
+             */
+            builtin: boolean;
+            /** Parent Id */
+            parent_id?: string | null;
+        };
+        /** FieldTemplateLibrary */
+        FieldTemplateLibrary: {
+            /**
+             * Session Id
+             * Format: uuid
+             * @default 1a6bfd9a-3006-56e1-b49a-8b210012bfc2
+             */
+            session_id: string;
+            /** Templates */
+            templates: components["schemas"]["FieldTemplate-Output"][];
+            /**
+             * Template Sets
+             * @default []
+             */
+            template_sets: components["schemas"]["FieldTemplateSet-Output"][];
+        };
+        /**
+         * FieldTemplateSet
+         * @description A complete starting structure, copied into each novel instead of live-bound.
+         */
+        "FieldTemplateSet-Input": {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Templates */
+            templates?: components["schemas"]["FieldTemplate-Input"][];
+            /**
+             * Builtin
+             * @default false
+             */
+            builtin: boolean;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Replaces Id */
+            replaces_id?: string | null;
+        };
+        /**
+         * FieldTemplateSet
+         * @description A complete starting structure, copied into each novel instead of live-bound.
+         */
+        "FieldTemplateSet-Output": {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Templates */
+            templates?: components["schemas"]["FieldTemplate-Output"][];
+            /**
+             * Builtin
+             * @default false
+             */
+            builtin: boolean;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Replaces Id */
+            replaces_id?: string | null;
         };
         /** Foreshadow */
         "Foreshadow-Input": {
@@ -1499,6 +1931,19 @@ export interface components {
             /** Revision Id */
             revision_id?: string | null;
         };
+        /** InitializeStoryTemplateSetRequest */
+        InitializeStoryTemplateSetRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "initialize_story_template_set";
+            /**
+             * Template Set Id
+             * Format: uuid
+             */
+            template_set_id: string;
+        };
         /** InterviewRequest */
         InterviewRequest: {
             /**
@@ -1517,6 +1962,7 @@ export interface components {
             checklist?: components["schemas"]["CreationField"][];
             proposal?: components["schemas"]["CreationProposal-Output"] | null;
         };
+        JsonValue: unknown;
         /** OutlineBeat */
         "OutlineBeat-Input": {
             /**
@@ -1590,6 +2036,17 @@ export interface components {
             status: "planned" | "active" | "completed" | "abandoned";
             /** Thread Id */
             thread_id?: string | null;
+        };
+        /** PatchPart */
+        PatchPart: {
+            /**
+             * Kind
+             * @default key
+             * @enum {string}
+             */
+            kind: "key" | "item";
+            /** Value */
+            value: string;
         };
         /** PlotThread */
         "PlotThread-Input": {
@@ -1755,12 +2212,14 @@ export interface components {
         };
         /** PreferencePatch */
         "PreferencePatch-Input": {
+            entries?: components["schemas"]["CollectionPatch_Entry_-Input"];
             likes?: components["schemas"]["CollectionPatch_Preference_-Input"];
             dislikes?: components["schemas"]["CollectionPatch_Preference_-Input"];
             custom_fields?: components["schemas"]["CollectionPatch_Entry_-Input"];
         };
         /** PreferencePatch */
         "PreferencePatch-Output": {
+            entries?: components["schemas"]["CollectionPatch_Entry_-Output"];
             likes?: components["schemas"]["CollectionPatch_Preference_-Output"];
             dislikes?: components["schemas"]["CollectionPatch_Preference_-Output"];
             custom_fields?: components["schemas"]["CollectionPatch_Entry_-Output"];
@@ -2056,23 +2515,28 @@ export interface components {
              */
             created_at?: string;
         };
+        /** PurgeResult */
+        PurgeResult: {
+            /** Command Ids */
+            command_ids?: string[];
+            /** Cache Ids */
+            cache_ids?: string[];
+        };
         /** ReaderPreferences */
         "ReaderPreferences-Input": {
-            /** Likes */
-            likes?: components["schemas"]["Preference-Input"][];
-            /** Dislikes */
-            dislikes?: components["schemas"]["Preference-Input"][];
-            /** Custom Fields */
-            custom_fields?: components["schemas"]["Entry-Input"][];
+            /** Entries */
+            entries?: components["schemas"]["Entry-Input"][];
         };
         /** ReaderPreferences */
         "ReaderPreferences-Output": {
+            /** Entries */
+            entries?: components["schemas"]["Entry-Output"][];
             /** Likes */
-            likes?: components["schemas"]["Preference-Output"][];
+            readonly likes: components["schemas"]["Preference-Output"][];
             /** Dislikes */
-            dislikes?: components["schemas"]["Preference-Output"][];
+            readonly dislikes: components["schemas"]["Preference-Output"][];
             /** Custom Fields */
-            custom_fields?: components["schemas"]["Entry-Output"][];
+            readonly custom_fields: components["schemas"]["Entry-Output"][];
         };
         /** RecoverCommandRequest */
         RecoverCommandRequest: {
@@ -2177,6 +2641,11 @@ export interface components {
         };
         /** ReviewDraftRequest */
         ReviewDraftRequest: {
+            /**
+             * Text Only
+             * @default false
+             */
+            text_only: boolean;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -2446,6 +2915,46 @@ export interface components {
              */
             estimated_usage: boolean;
         };
+        /** SaveFieldTemplateRequest */
+        "SaveFieldTemplateRequest-Input": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "save_field_template";
+            template: components["schemas"]["FieldTemplate-Input"];
+        };
+        /** SaveFieldTemplateRequest */
+        "SaveFieldTemplateRequest-Output": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "save_field_template";
+            template: components["schemas"]["FieldTemplate-Output"];
+        };
+        /** SaveFieldTemplateSetRequest */
+        "SaveFieldTemplateSetRequest-Input": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "save_field_template_set";
+            template_set: components["schemas"]["FieldTemplateSet-Input"];
+            /** Replace Template Set Id */
+            replace_template_set_id?: string | null;
+        };
+        /** SaveFieldTemplateSetRequest */
+        "SaveFieldTemplateSetRequest-Output": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "save_field_template_set";
+            template_set: components["schemas"]["FieldTemplateSet-Output"];
+            /** Replace Template Set Id */
+            replace_template_set_id?: string | null;
+        };
         /** SavePromptTemplateRequest */
         SavePromptTemplateRequest: {
             /**
@@ -2522,6 +3031,18 @@ export interface components {
             character_patches?: components["schemas"]["CharacterPatch-Output"][];
             /** Source Command Id */
             source_command_id?: string | null;
+            /** Custom Fields */
+            custom_fields?: components["schemas"]["Entry-Output"][];
+        };
+        /** SetSetupDraftDeletedRequest */
+        SetSetupDraftDeletedRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "set_setup_draft_deleted";
+            /** Deleted */
+            deleted: boolean;
         };
         /** SetupDraft */
         "SetupDraft-Input": {
@@ -2563,6 +3084,10 @@ export interface components {
              * @default 0
              */
             save_event_id: number;
+            /** Field Template Ids */
+            field_template_ids?: string[];
+            /** Field Template Set Id */
+            field_template_set_id?: string | null;
         };
         /** SetupDraft */
         "SetupDraft-Output": {
@@ -2604,6 +3129,10 @@ export interface components {
              * @default 0
              */
             save_event_id: number;
+            /** Field Template Ids */
+            field_template_ids?: string[];
+            /** Field Template Set Id */
+            field_template_set_id?: string | null;
         };
         /**
          * Snapshot
@@ -2704,6 +3233,7 @@ export interface components {
             initial_snapshots?: components["schemas"]["Snapshot"][];
             /** Custom Fields */
             custom_fields?: components["schemas"]["Entry-Output"][];
+            field_template_set?: components["schemas"]["FieldTemplateSet-Output"] | null;
         };
         /** StoryMetadataPatch */
         "StoryMetadataPatch-Input": {
@@ -2837,6 +3367,8 @@ export interface components {
         };
         /** UndoRequest */
         UndoRequest: {
+            /** Scope Id */
+            scope_id?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -2870,6 +3402,26 @@ export interface components {
             message: string;
             /** Command Ids */
             command_ids?: string[];
+        };
+        /** UpdateStoryFieldSchemaRequest */
+        "UpdateStoryFieldSchemaRequest-Input": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "update_story_field_schema";
+            /** Templates */
+            templates: components["schemas"]["FieldTemplate-Input"][];
+        };
+        /** UpdateStoryFieldSchemaRequest */
+        "UpdateStoryFieldSchemaRequest-Output": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "update_story_field_schema";
+            /** Templates */
+            templates: components["schemas"]["FieldTemplate-Output"][];
         };
         /** UpdateStoryRequest */
         "UpdateStoryRequest-Input": {
@@ -2923,6 +3475,17 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ValuePatch */
+        ValuePatch: {
+            /**
+             * Op
+             * @enum {string}
+             */
+            op: "set" | "remove" | "order";
+            /** Path */
+            path?: components["schemas"]["PatchPart"][];
+            value?: components["schemas"]["JsonValue"];
         };
         /** WorkingDraft */
         "WorkingDraft-Input": {
@@ -3020,23 +3583,15 @@ export interface components {
         };
         /** WorldSetting */
         "WorldSetting-Input": {
-            /**
-             * Premise
-             * @default
-             */
-            premise: string;
             /** Entries */
             entries?: components["schemas"]["Entry-Input"][];
         };
         /** WorldSetting */
         "WorldSetting-Output": {
-            /**
-             * Premise
-             * @default
-             */
-            premise: string;
             /** Entries */
             entries?: components["schemas"]["Entry-Output"][];
+            /** Premise */
+            readonly premise: string;
         };
         /** WriterNote */
         "WriterNote-Input": {
@@ -3098,6 +3653,7 @@ export interface components {
         };
         /** WriterPatch */
         "WriterPatch-Input": {
+            entries?: components["schemas"]["CollectionPatch_Entry_-Input"];
             mainlines?: components["schemas"]["CollectionPatch_PlotThread_-Input"];
             subplots?: components["schemas"]["CollectionPatch_PlotThread_-Input"];
             foreshadows?: components["schemas"]["CollectionPatch_Foreshadow_-Input"];
@@ -3113,6 +3669,7 @@ export interface components {
         };
         /** WriterPatch */
         "WriterPatch-Output": {
+            entries?: components["schemas"]["CollectionPatch_Entry_-Output"];
             mainlines?: components["schemas"]["CollectionPatch_PlotThread_-Output"];
             subplots?: components["schemas"]["CollectionPatch_PlotThread_-Output"];
             foreshadows?: components["schemas"]["CollectionPatch_Foreshadow_-Output"];
@@ -3128,32 +3685,28 @@ export interface components {
         };
         /** WriterWorkspace */
         WriterWorkspace: {
+            /** Entries */
+            entries?: components["schemas"]["Entry-Output"][];
             /** Mainlines */
-            mainlines?: components["schemas"]["PlotThread-Output"][];
+            readonly mainlines: components["schemas"]["PlotThread-Output"][];
             /** Subplots */
-            subplots?: components["schemas"]["PlotThread-Output"][];
+            readonly subplots: components["schemas"]["PlotThread-Output"][];
             /** Foreshadows */
-            foreshadows?: components["schemas"]["Foreshadow-Output"][];
+            readonly foreshadows: components["schemas"]["Foreshadow-Output"][];
             /** Outline */
-            outline?: components["schemas"]["OutlineBeat-Output"][];
+            readonly outline: components["schemas"]["OutlineBeat-Output"][];
             /** Future Directions */
-            future_directions?: components["schemas"]["PlotThread-Output"][];
+            readonly future_directions: components["schemas"]["PlotThread-Output"][];
             /** Notes */
-            notes?: components["schemas"]["WriterNote-Output"][];
+            readonly notes: components["schemas"]["WriterNote-Output"][];
             /** Drafts */
-            drafts?: components["schemas"]["WorkingDraft-Output"][];
-            /**
-             * Progress
-             * @default
-             */
-            progress: string;
-            /**
-             * Current User Intent
-             * @default
-             */
-            current_user_intent: string;
+            readonly drafts: components["schemas"]["WorkingDraft-Output"][];
+            /** Progress */
+            readonly progress: string;
+            /** Current User Intent */
+            readonly current_user_intent: string;
             /** Custom Fields */
-            custom_fields?: components["schemas"]["Entry-Output"][];
+            readonly custom_fields: components["schemas"]["Entry-Output"][];
         };
         /** WritingDraft */
         WritingDraft: {
@@ -3181,6 +3734,160 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    field_templates_api_field_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FieldTemplateLibrary"];
+                };
+            };
+        };
+    };
+    local_field_schema_api_stories__story_id__field_template_set_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                story_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FieldTemplateSet-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_field_schema_api_stories__story_id__field_template_set_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                story_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportStoryFieldSchemaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FieldTemplateSet-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fields_api_stories__story_id__fields_get: {
+        parameters: {
+            query: {
+                scope: "story" | "world" | "character" | "state" | "preferences" | "writer" | "chapter" | "scene";
+                entity_id?: string | null;
+            };
+            header?: never;
+            path: {
+                story_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FieldDocumentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fields_history_api_stories__story_id__field_history_get: {
+        parameters: {
+            query?: {
+                revision_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                story_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FieldChangeEvent"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     discussion_sessions_api_stories__story_id__discussions_get: {
         parameters: {
             query?: never;
@@ -3586,6 +4293,37 @@ export interface operations {
             };
         };
     };
+    purge_story_api_stories__story_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                story_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurgeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     undo_state_api_undo__scope_id__get: {
         parameters: {
             query?: never;
@@ -3650,7 +4388,9 @@ export interface operations {
     };
     drafts_api_drafts_get: {
         parameters: {
-            query?: never;
+            query?: {
+                deleted?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3664,6 +4404,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SetupDraft-Output"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3686,6 +4435,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SetupDraft-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_draft_api_drafts__draft_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurgeResult"];
                 };
             };
             /** @description Validation Error */

@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import ConversationActions from "./ConversationActions.vue";
+import ConversationLog from "./ConversationLog.vue";
 import { onMounted, onUnmounted, ref } from "vue";
 import { computed } from "vue";
 import { api, closeStream, type CommandSubmission, type CommandView, type DiscussionSession, type EventData, type RunOverview, type StoryView } from "../api/client";
 import { NButton, NCard, NEmpty, NInput, NScrollbar, NTag } from "naive-ui";
-import { historyLink, navigate, routeQuery, replaceQuery } from "../ui/navigation";
+import { routeQuery, replaceQuery } from "../ui/navigation";
 import { changeText } from "../ui/runPresentation";
 import { MessageCircle, Plus, Send } from "@lucide/vue";
 
@@ -39,7 +41,7 @@ async function refresh() {
   replaceQuery(query);
   message.value = localStorage.getItem(`ainovel.discussionDraft.${props.storyId}.${sessionId.value ?? "new"}`) ?? "";
   if (sessionId.value) {
-    commands.value = await api.get<CommandView[]>(`/api/stories/${props.storyId}/discussions/${sessionId.value}/commands`);
+    commands.value = (await api.get<CommandView[]>(`/api/stories/${props.storyId}/discussions/${sessionId.value}/commands`)).filter(item => !item.undone);
     const overviewPairs = await Promise.all(commands.value.filter(command => command.status !== "queued").map(async command => {
       try { return [command.submission.id, await api.get<RunOverview>(`/api/runs/${command.submission.id}`)] as const; }
       catch { return null; }
@@ -98,7 +100,7 @@ async function send() {
     <div class="discussion-layout">
       <aside class="discussion-sidebar">
         <div class="discussion-sidebar-heading"><div><span class="eyebrow">对话记录</span><h2>讨论会话</h2></div><n-button quaternary circle aria-label="新建讨论" :disabled="busy || serverBusy || sessionCreating" :loading="sessionCreating" @click="createSession"><Plus :size="17"/></n-button></div>
-        <p>可以推敲剧情、人物和世界规则。需要写正文时回到创作区。</p>
+        <p>可以讨论和查询故事。修改资料或写正文时回到创作区。</p>
         <n-scrollbar class="session-scroll"><button v-for="session in sessions" :key="session.id" class="session-row" :class="{ selected: session.id === sessionId }" :disabled="busy" @click="sessionId = session.id; refresh()"><MessageCircle :size="15"/><span><strong>{{ session.title }}</strong><small>{{ session.message_count }} 轮</small></span></button></n-scrollbar>
         <n-button block secondary :disabled="busy || serverBusy || sessionCreating" @click="createSession"><template #icon><Plus :size="16"/></template>新讨论</n-button>
       </aside>
@@ -115,13 +117,15 @@ async function send() {
                 <n-tag size="small" round :type="command.output.discussion.settings_changed ? 'success' : 'default'">{{ command.output.discussion.settings_changed ? '资料已更新 · 正文未改动' : '资料未修改 · 正文未改动' }}</n-tag>
                 <div v-if="overviews[command.submission.id]?.change_set.entries.length" class="discussion-changes"><p v-for="(change,index) in overviews[command.submission.id].change_set.entries" :key="index">{{ change.category }} · {{ change.path }}：{{ changeText(change.after) || '已移除' }}</p></div>
               </n-card>
-              <n-card v-else-if="command.status === 'failed'" class="failed-turn" size="small"><template #header>本轮讨论失败</template><p>{{ command.error || '故事资料没有写入。' }}</p><n-button text @click="navigate(historyLink(storyId, command.submission.id))">在运行历史中处理</n-button></n-card>
+              <n-card v-else-if="command.status === 'failed'" class="failed-turn" size="small"><template #header>本轮讨论失败</template><p>{{ command.error || '故事资料没有写入。' }}</p></n-card>
               <n-card v-else class="pending-turn" size="small"><n-tag type="info" size="small">{{ status }}</n-tag></n-card>
+              <ConversationLog :command="command" />
             </article>
-            <div v-if="!commands.length" class="discussion-empty"><n-empty description="下一步，故事可以怎样发展？"><template #extra><p>聊剧情、推敲人物与世界规则。明确要求修改时，助手会更新资料并列出变化。</p></template></n-empty><div class="suggestion-list"><n-button v-for="idea in ['梳理主线与尚未回收的伏笔。','讨论下一幕的几个可能走向。','看看人物的发展是否需要调整。']" :key="idea" secondary size="small" @click="message = idea">{{ idea }}</n-button></div></div>
+            <ConversationActions :key="sessionId || 'new'" :command="commands.filter(item => item.submission.payload.kind === 'discussion').at(-1)" :scope-key="`discussion-${storyId}-${sessionId}`" :disabled="busy || serverBusy" @changed="refresh" />
+            <div v-if="!commands.length" class="discussion-empty"><n-empty description="下一步，故事可以怎样发展？"><template #extra><p>聊剧情、推敲人物与世界规则。讨论只提供建议和查询，资料修改请回到写幕流程。</p></template></n-empty><div class="suggestion-list"><n-button v-for="idea in ['梳理主线与尚未回收的伏笔。','讨论下一幕的几个可能走向。','看看人物的发展是否需要调整。']" :key="idea" secondary size="small" @click="message = idea">{{ idea }}</n-button></div></div>
           </div>
         </n-scrollbar>
-    <footer class="studio-composer discussion-composer"><div class="studio-composer-inner"><form @submit.prevent="send"><n-input v-model:value="message" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" :disabled="busy || serverBusy" placeholder="聊聊后续剧情，或明确告诉 AI 要修改哪些资料…" @input="saveDraft" @keydown.enter.exact.prevent="send"/><div class="composer-actions"><span class="muted" role="status">{{ status }} · 输入会自动保存；Shift + 回车换行</span><n-button type="primary" attr-type="submit" :loading="busy || serverBusy" :disabled="!message.trim()"><template #icon><Send :size="15"/></template>发送</n-button></div></form></div></footer>
+    <footer class="studio-composer discussion-composer"><div class="studio-composer-inner"><form @submit.prevent="send"><n-input v-model:value="message" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" :disabled="busy || serverBusy" placeholder="聊聊后续剧情、人物或世界规则…" @input="saveDraft" @keydown.enter.exact.prevent="send"/><div class="composer-actions"><span class="muted" role="status">{{ status }} · 输入会自动保存；Shift + 回车换行</span><n-button type="primary" attr-type="submit" :loading="busy || serverBusy" :disabled="!message.trim()"><template #icon><Send :size="15"/></template>发送</n-button></div></form></div></footer>
       </section>
     </div>
 

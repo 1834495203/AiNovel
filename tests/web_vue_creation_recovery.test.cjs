@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
 const { test } = require("node:test");
 
-test("Vue creation preserves interview context and delegates recovery to central history", {
+test("Vue creation preserves interview context and keeps recovery controls in the conversation", {
   skip: !process.env.AINOVEL_BROWSER_TEST,
 }, async () => {
   const { chromium } = require(process.env.AINOVEL_PLAYWRIGHT_PATH || "playwright");
@@ -123,7 +123,8 @@ test("Vue creation preserves interview context and delegates recovery to central
     assert.equal(interviewSubmissions[0].payload.turns[1].content, assistant1.content, "下一轮必须保留上一条assistant上下文");
 
     assert.equal(await page.getByRole("button", { name: /撤回|重试/ }).count(), 0, "构思页不再提供分散恢复入口");
-    assert.ok(await page.getByRole("button", { name: /运行历史/ }).count());
+    assert.equal(await page.getByRole("button", { name: /运行历史/ }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "回退", exact: true }).count(), 1);
     assert.deepEqual(pageErrors, []);
   } finally { await browser.close(); }
 });

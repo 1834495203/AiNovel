@@ -20,8 +20,8 @@ onMounted(() => refresh().catch(e => error.value = e.message));
 </script>
 <template>
   <main class="materials-page">
-    <header class="materials-page-heading"><h1>故事资料</h1><p>{{ view?.story.title }} · 设定与创作计划，修改后应用于后续创作。</p></header>
-    <StoryMaterials v-if="view" :view="view" :disabled="busy" :execute-command="execute" />
+    <header class="materials-page-heading"><h1>故事资料</h1><p>{{ view?.story.title }} · 资料只读查看；请回到小说工作区修改后续创作的设定。</p></header>
+    <StoryMaterials v-if="view" :view="view" :disabled="true" :execute-command="execute" />
     <p v-else>{{ error || '正在读取资料…' }}</p>
   </main>
 </template>

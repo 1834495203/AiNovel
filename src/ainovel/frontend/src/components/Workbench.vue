@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import ConversationActions from "./ConversationActions.vue";
+import ConversationLog from "./ConversationLog.vue";
 import { computed, onMounted, onUnmounted, ref, toRaw, watch } from "vue";
 import { api, closeStream, type CommandPayload, type CommandView, type EventData, type RunOverview, type Schemas, type StoryView } from "../api/client";
 import { NButton, NDrawer, NDrawerContent, NEmpty, NInput, NSelect } from "naive-ui";
 import PromptTemplateSettings from "./PromptTemplateSettings.vue";
 import NovelReader from "./NovelReader.vue";
 import StoryMaterials from "./StoryMaterials.vue";
-import { navigate, historyLink } from "../ui/navigation";
+import { navigate } from "../ui/navigation";
 import { operationLabel, operationInput, operationOutput, statusLabel } from "../ui/runPresentation";
 
 const props = defineProps<{ storyId: string }>();
@@ -37,7 +39,9 @@ const draftParagraphs = computed(() => pendingDraft.value?.content.text.split(/\
 const staleDraft = computed(() => !!pendingDraft.value && (run.value?.draft_stale ?? (!!activeRun.value && !!view.value &&
   activeRun.value.submission.base_revision_id !== view.value.revision_id)));
 const serverBusy = computed(() => commands.value.some(command => !command.undone && ["queued", "running"].includes(command.status)));
-const conversationHistory = computed(() => commands.value.filter(item => ["generate", "review_draft", "resolve_character", "rewrite", "accept_rewrite", "reject_rewrite"].includes(item.submission.payload.kind)));
+const conversationHistory = computed(() => commands.value.filter(item => !item.undone && !['discussion','start_discussion','character_chat','start_character_chat','undo','recover_command','save_setup_draft'].includes(item.submission.payload.kind)));
+async function conversationChanged() { try { await refresh(); } catch { emit('back'); } }
+
 watch(() => activeRun.value?.output.character, character => { characterDraft.value = character ? structuredClone(toRaw(character)) : null; }, { immediate: true });
 
 const notify = (message: string) => { toast.value = message; window.setTimeout(() => { if (toast.value === message) toast.value = ""; }, 6500); };
@@ -135,7 +139,7 @@ async function review(decision: "confirm" | "discard" | "revise", text = "") {
   if (decision === "confirm" && staleDraft.value) return;
   busy.value = true;
   try {
-    await command({ kind: "review_draft", generation_command_id: pendingDraft.value.generation_command_id,
+    await command({ kind: "review_draft", text_only: false, generation_command_id: pendingDraft.value.generation_command_id,
       expected_draft_version: pendingDraft.value.version, decision, feedback: text, selection: null }, null,
     staleDraft.value ? activeRun.value!.submission.base_revision_id ?? null : view.value!.revision_id);
     feedback.value = "";
@@ -179,7 +183,7 @@ function chooseTemplates(selection: Schemas["PromptTemplateSelection"][]) {
   notify("本次采用的模板版本已保存到此浏览器；运行记录会固定绑定版本。");
 }
 function persistComposer() { localStorage.setItem(`ainovel.composer.${props.storyId}`, input.value); }
-function showRun() { navigate(historyLink(props.storyId)); }
+function showRun() { chatOpen.value = true; }
 function showDecision() { document.getElementById("decision-card")?.scrollIntoView({ behavior: "smooth", block: "center" }); }
 
 function togglePane(pane: "directory" | "novel" | "records") {
@@ -211,7 +215,7 @@ function recordLocation(item: CommandView) {
   const chapter = view.value?.story.chapters.find(c => c.id === scene.chapter_id);
   return `${chapter?.title || '章节'} / ${scene.title}`;
 }
-const recordOptions = computed(() => [{ label: '全部创作记录', value: 'all' }, ...(view.value?.story.chapters.flatMap(chapter => [{ label: chapter.title, value: `chapter:${chapter.id}` }, ...view.value!.story.scenes.filter(s => s.chapter_id === chapter.id).map(scene => ({ label: `${chapter.title} / ${scene.title}`, value: `scene:${scene.id}` }))]) ?? [])]);
+const recordOptions = computed(() => [{ label: '全部写作对话', value: 'all' }, ...(view.value?.story.chapters.flatMap(chapter => [{ label: chapter.title, value: `chapter:${chapter.id}` }, ...view.value!.story.scenes.filter(s => s.chapter_id === chapter.id).map(scene => ({ label: `${chapter.title} / ${scene.title}`, value: `scene:${scene.id}` }))]) ?? [])]);
 const visibleRecords = computed(() => conversationHistory.value.filter(item => {
   if (recordFilter.value === 'all') return true;
   const scene = recordScene(item);
@@ -239,7 +243,7 @@ onUnmounted(() => window.removeEventListener('ainovel:work-action', sidebarActio
     <Teleport to="#workspace-header-controls"><div class="pane-toolbar"><div class="pane-switches">
       <n-button size="small" :type="directoryOpen ? 'primary' : 'default'" :secondary="directoryOpen" @click="togglePane('directory')">目录</n-button>
       <n-button size="small" :type="novelOpen ? 'primary' : 'default'" :secondary="novelOpen" @click="togglePane('novel')">小说</n-button>
-      <n-button size="small" :type="chatOpen ? 'primary' : 'default'" :secondary="chatOpen" @click="togglePane('records')">创作记录</n-button>
+      <n-button size="small" :type="chatOpen ? 'primary' : 'default'" :secondary="chatOpen" @click="togglePane('records')">写作会话</n-button>
     </div></div></Teleport>
     <div class="work-panes" :class="{ 'has-directory': directoryOpen, 'has-novel': novelOpen, 'has-records': chatOpen }">
       <aside v-if="directoryOpen" class="workspace-pane directory-pane" aria-label="章节目录"><header class="pane-heading"><h2>目录</h2><n-button quaternary circle aria-label="关闭目录" @click="togglePane('directory')">×</n-button></header><div class="pane-scroll directory-items">
@@ -272,12 +276,13 @@ onUnmounted(() => window.removeEventListener('ainovel:work-action', sidebarActio
 
         <NovelReader v-if="!pendingDraft || view.story.scenes.length" :view="view" :commands="commands" :disabled="busy || serverBusy" :execute-command="command" :selected-scene="selectedScene" :embedded="true" @scene-selected="selectedScene = $event" @revision-changed="refresh" />
       </div></section>
-      <section v-if="chatOpen" class="workspace-pane records-pane" aria-label="创作记录面板"><header class="pane-heading"><h2>创作记录</h2><n-button quaternary circle aria-label="关闭创作记录" @click="togglePane('records')">×</n-button></header><n-select class="record-filter" aria-label="创作记录章节和幕" v-model:value="recordFilter" :options="recordOptions"/><div class="pane-scroll records-scroll">
+      <section v-if="chatOpen" class="workspace-pane records-pane" aria-label="创作记录面板"><header class="pane-heading"><h2>写作会话</h2><n-button quaternary circle aria-label="关闭创作记录" @click="togglePane('records')">×</n-button></header><n-select class="record-filter" aria-label="创作记录章节和幕" v-model:value="recordFilter" :options="recordOptions"/><div class="pane-scroll records-scroll">
         <n-empty v-if="!visibleRecords.length" description="此章节或幕还没有创作记录" />
-        <article v-for="item in visibleRecords" :key="item.submission.id" class="creation-record" :data-command-id="item.submission.id"><div class="record-location">{{ recordLocation(item) }} · {{ item.undone ? '已撤回' : statusLabel(item.status) }}</div><h3>{{ operationLabel(item) }}</h3><p v-if="operationInput(item)" class="record-request">{{ operationInput(item) }}</p><p class="preserve-text">{{ operationOutput(item) }}</p></article>
+        <article v-for="item in visibleRecords" :key="item.submission.id" class="creation-record" :data-command-id="item.submission.id"><div class="record-location">{{ recordLocation(item) }} · {{ item.undone ? '已撤回' : statusLabel(item.status) }}</div><h3>{{ operationLabel(item) }}</h3><p v-if="operationInput(item)" class="record-request">{{ operationInput(item) }}</p><p class="preserve-text">{{ operationOutput(item) }}</p><ConversationLog :command="item" /></article>
+        <ConversationActions v-if="!visibleRecords.length || visibleRecords.at(-1)?.submission.id === conversationHistory.at(-1)?.submission.id" :command="visibleRecords.at(-1)" :scope-key="`writing-${storyId}`" :disabled="busy || serverBusy" :committed="!!(visibleRecords.at(-1) && recordScene(visibleRecords.at(-1)!)?.text)" @changed="conversationChanged" />
       </div></section>
     </div>
-    <footer class="studio-composer"><div class="studio-composer-inner"><div v-if="pendingDraft" class="draft-pending-bar"><div><strong>草稿待确认</strong><span>阅读正文后，可以提出修改意见、确认或放弃草稿。</span></div><n-button secondary @click="novelOpen = true; showDecision()">查看草稿与确认操作</n-button></div><form v-else class="composer-form" @submit.prevent="write"><div class="composer-controls"><span role="status">{{ busy || serverBusy ? currentStep || '任务处理中' : activeRun ? '先确认草稿或审批角色，再继续创作' : '说明你希望接下来发生什么' }}</span><n-button v-if="activeRun" text size="small" @click="novelOpen = true; showDecision()">处理待确认内容</n-button><n-button v-if="failedRun" text size="small" @click="showRun">任务失败，前往运行历史</n-button></div><n-input id="instruction" aria-label="创作要求" v-model:value="input" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" :disabled="busy || serverBusy || !!activeRun" @input="persistComposer" placeholder="告诉 AI 你希望接下来发生什么…"/><div class="composer-actions"><span class="muted">草稿确认后进入正文</span><n-button type="primary" attr-type="submit" :loading="busy || serverBusy" :disabled="!!activeRun || !input.trim()">开始创作</n-button></div></form></div></footer>
+    <footer class="studio-composer"><div class="studio-composer-inner"><div v-if="pendingDraft" class="draft-pending-bar"><div><strong>草稿待确认</strong><span>阅读正文后，可以提出修改意见、确认或放弃草稿。</span></div><n-button secondary @click="novelOpen = true; showDecision()">查看草稿与确认操作</n-button></div><form v-else class="composer-form" @submit.prevent="write"><div class="composer-controls"><span role="status">{{ busy || serverBusy ? currentStep || '任务处理中' : activeRun ? '先确认草稿或审批角色，再继续创作' : '说明你希望接下来发生什么' }}</span><n-button v-if="activeRun" text size="small" @click="novelOpen = true; showDecision()">处理待确认内容</n-button><n-button v-if="failedRun" text size="small" @click="showRun">任务失败，查看会话末尾</n-button></div><n-input id="instruction" aria-label="创作要求" v-model:value="input" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" :disabled="busy || serverBusy || !!activeRun" @input="persistComposer" placeholder="告诉 AI 你希望接下来发生什么…"/><div class="composer-actions"><span class="muted">草稿确认后进入正文</span><n-button type="primary" attr-type="submit" :loading="busy || serverBusy" :disabled="!!activeRun || !input.trim()">开始创作</n-button></div></form></div></footer>
     <n-drawer v-model:show="materialsOpen" placement="right" width="min(900px, 95vw)" :trap-focus="false">
       <n-drawer-content title="故事资料" closable>
         <p class="muted">已发生事实、未来剧情计划和创作策略各自保存。修改资料后，会在本次运行中展示具体变化。</p>

@@ -224,12 +224,16 @@ class NarrativeWorkflow:
 
     async def rewrite_plan(self, state: WorkflowState) -> WorkflowState:
         await self.step(state, "rewrite_plan", "分析草稿修改范围与重写策略")
-        state.revision_plan = await self.model.generate(
-            RevisionPlan,
-            "revision_plan",
-            state,
-            state.execution_id,
-        )
+        if state.text_only_revision or (state.feedback and state.feedback.text_only):
+            state.revision_plan = RevisionPlan(
+                goal="只重新生成正文，保留本幕原有设定和规划",
+                instructions=["只修改正文表达，不改变原有设定、规划或引入新的持续角色。"],
+                character_names=state.plan.character_names if state.plan else [],
+            )
+        else:
+            state.revision_plan = await self.model.generate(
+                RevisionPlan, "revision_plan", state, state.execution_id,
+            )
         revision = state.revision_plan
         previous = state.intent or Intent(goal=state.instruction)
         state.intent = previous.model_copy(
@@ -322,6 +326,10 @@ class NarrativeWorkflow:
         if state.approved_character is not None and not any(
             character.name == state.approved_character.name for character in state.story.characters
         ):
+            from ainovel.core.fields import FieldTarget
+            from ainovel.core.story_fields import ensure_story_schema, initial_fields
+
+            ensure_story_schema(state.story)
             character = Character.model_validate(state.approved_character.model_dump())
             character.introduced_scene_id = state.scene_id
             state.story.characters.append(character)
@@ -333,6 +341,10 @@ class NarrativeWorkflow:
                     custom_fields=character.custom_fields,
                 )
             )
+            character.profile.entries = initial_fields(state.story, FieldTarget(scope="character", entity_id=character.id), character.profile.entries)
+            baseline = state.story.initial_snapshots[-1]
+            baseline.profile = character.profile.model_copy(deep=True)
+            baseline.state.entries = initial_fields(state.story, FieldTarget(scope="state", entity_id=character.id), baseline.state.entries)
             state.plan.character_names.append(character.name)
         return await self.saved(state, "approval")
 
@@ -512,6 +524,7 @@ class NarrativeWorkflow:
             )
         )
         state.execution_command_id = answer.execution_command_id
+        state.text_only_revision = state.text_only_revision or answer.text_only
         state.draft_version += 1
         state.review_response = None
         if answer.decision == "confirm":

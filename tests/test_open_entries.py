@@ -16,7 +16,7 @@ def test_arbitrary_nested_records_survive_edit_and_round_trip() -> None:
     assert restored.entries == [changed]
     assert "钟声响起时" in restored.entries[0].text()
     assert WorldPatch(entries=CollectionPatch[Entry](remove=[entry.id])).apply(restored).entries == []
-    assert set(WorldSetting.model_fields) == {"premise", "entries"}
+    assert set(WorldSetting.model_fields) == {"entries"}
     assert set(Profile.model_fields) == set(CharacterState.model_fields) == {"entries"}
 
 

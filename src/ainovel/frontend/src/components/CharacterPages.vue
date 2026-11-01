@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import ConversationActions from "./ConversationActions.vue";
+import ConversationLog from "./ConversationLog.vue";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { NButton, NCard, NInput, NSelect, NTag, NModal } from "naive-ui";
-import { routeQuery, replaceQuery, historyLink, navigate } from "../ui/navigation";
+import { routeQuery, replaceQuery } from "../ui/navigation";
 import { api, closeStream, type CharacterSnapshot, type CommandPayload, type CommandView, type EventData, type Story, type StoryView } from "../api/client";
 
 const props = defineProps<{ mode: "characters" | "character" }>();
@@ -149,8 +151,10 @@ async function selectSession(id: string) {
     <section class="role-chat-history" aria-live="polite"><article v-for="command in history.filter(item => item.output.chat || item.submission.payload.kind === 'character_chat')" :key="command.submission.id">
       <div v-if="command.submission.payload.kind === 'character_chat'" class="chat-bubble user-bubble"><small>你</small>{{ command.submission.payload.message }}</div>
       <div v-if="command.output.chat" class="chat-bubble assistant-bubble"><small>{{ activeCharacter.name }}</small>{{ command.output.chat.reply }}</div>
-      <div v-else-if="command.status === 'failed'" class="notice warning">角色对话失败：{{ command.error }}<div class="actions"><NButton text @click="navigate(historyLink(storyId, command.submission.id))">在运行历史中处理</NButton></div></div>
+      <div v-else-if="command.status === 'failed'" class="notice warning">角色对话失败：{{ command.error }}<div class="actions"></div></div>
+      <ConversationLog :command="command" />
     </article><p v-if="!history.some(command => command.output.chat)" class="muted">你可以问问这个阶段的角色如何看待某件事。</p></section>
+    <ConversationActions :key="sessionId" :command="history.filter(item => !item.undone && item.submission.payload.kind === 'character_chat').at(-1)" :scope-key="`character-${sessionId}`" :disabled="busy || serverBusy" @changed="loadCharacterChat" />
     <form class="discussion-composer" @submit.prevent="send"><NInput v-model:value="answer" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" :disabled="busy || serverBusy" placeholder="向角色提问……" @input="saveAnswerDraft" /><NButton type="primary" attr-type="submit" :disabled="busy || serverBusy || !answer.trim()" :loading="busy || serverBusy">发送</NButton><small class="muted">角色使用所选阶段的档案与记忆；聊天不会写入小说。</small></form>
     <p v-if="status" class="muted" role="status">{{ status }}</p>
   </main>

@@ -184,7 +184,7 @@ async def test_first_scene_defaults_to_deep_and_retains_judge() -> None:
 def test_prompt_projection_keeps_typed_meaning_and_omits_unrelated_prose() -> None:
     story = active_story()
     world_entry = Entry(name="地点", value="必要地点")
-    story.world.entries = [world_entry]
+    story.world.entries.append(world_entry)
     story.preferences.likes = [Preference(name="喜欢", description="简洁", origin="explicit")]
     story.preferences.dislikes = [Preference(name="不喜欢", description="跳戏", origin="explicit")]
     foreshadow = Foreshadow(name="伏笔", status="planted", payoff="后续回收")
@@ -319,7 +319,7 @@ def test_confirmed_commit_keeps_plan_patch_and_source_command_atomic() -> None:
     committed = Services.apply_scene(state)
 
     assert any(item.name == "新主线" for item in committed.writer.mainlines)
-    assert committed.world.entries[0].name == "本幕地点"
+    assert any(entry.name == "本幕地点" for entry in committed.world.entries)
     assert committed.scenes[-1].source_command_id == state.execution_id
 
 

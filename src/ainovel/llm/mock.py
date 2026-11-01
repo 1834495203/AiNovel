@@ -13,8 +13,6 @@ from ainovel.core.discussion import (
     ReplyAction,
     SearchStoryAction,
     SearchStoryArguments,
-    UpdateSettingsAction,
-    UpdateSettingsArguments,
 )
 from ainovel.core.domain import (
     ChatResult,
@@ -76,15 +74,6 @@ class MockModel:
         if not context.tool_results and "召回" in context.message:
             action: DiscussionAction = SearchStoryAction(
                 arguments=SearchStoryArguments(query=context.message)
-            )
-        elif not context.tool_results and context.message.startswith("修改世界观："):
-            from ainovel.core.records import WorldPatch
-
-            action = UpdateSettingsAction(
-                arguments=UpdateSettingsArguments(
-                    patch=StoryMetadataPatch(world=WorldPatch(premise=context.message.split("：", 1)[1])),
-                    reason="用户明确要求修改世界观",
-                )
             )
         else:
             action = ReplyAction(

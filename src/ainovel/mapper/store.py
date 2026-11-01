@@ -43,6 +43,7 @@ from ainovel.mapper.models import (
     OperationRow,
     PromptTemplateBindingRow,
     PromptTemplateVersionRow,
+    ResourceDeletionRow,
     RevisionRow,
     StoryRow,
 )
@@ -157,6 +158,12 @@ class Store:
 
     async def submit(self, submission: CommandSubmission) -> CommandView:
         async with self.sessions.begin() as session:
+            scope = submission.story_id or submission.session_id or submission.id
+            await self.lock_operation_scope(session, scope)
+            await self.check_resource(session, submission.id)
+            await self.check_resource(session, scope, allow_deleted=submission.payload.kind in (
+                "set_setup_draft_deleted", "undo", "recover_command",
+            ))
             existing = await session.get(CommandRow, submission.id)
             if existing is not None:
                 if existing.payload != submission:
@@ -254,7 +261,7 @@ class Store:
         async with self.sessions.begin() as session:
             row = await session.get(CommandRow, command_id)
             if row is None:
-                raise ValueError("命令不存在")
+                return
             scope = row.payload.story_id or row.payload.session_id or row.id
             await self.lock_operation_scope(session, scope)
             await session.refresh(row, with_for_update=True)
@@ -308,6 +315,8 @@ class Store:
 
     async def append_event(self, event: Event) -> None:
         async with self.sessions.begin() as session:
+            if await session.get(CommandRow, event.command_id, with_for_update=True) is None:
+                return
             session.add(EventRow(command_id=event.command_id, payload=event))
 
     async def pin_prompt_templates(
@@ -487,7 +496,9 @@ class Store:
             if row is None:
                 raise ValueError("版本不存在")
             await self.active_story(session, row.story_id)
-            return row.payload
+            from ainovel.mapper.field_history import restore
+
+            return row.payload.model_copy(update={"story": await restore(session, revision_id, row.story_id)})
 
     async def head(self, story_id: UUID) -> StoryView:
         async with self.sessions() as session:
@@ -495,7 +506,9 @@ class Store:
             revision = await session.get(RevisionRow, row.head_id)
             if revision is None:
                 raise ValueError("小说版本丢失")
-            return StoryView(revision_id=row.head_id, story=revision.payload.story)
+            from ainovel.mapper.field_history import restore
+
+            return StoryView(revision_id=row.head_id, story=await restore(session, row.head_id, story_id))
 
     async def stories(self, deleted: bool = False) -> list[StorySummary]:
         async with self.sessions() as session:
@@ -585,6 +598,9 @@ class Store:
                 updated_output = proposal_row.output.model_copy(deep=True)
                 updated_output.rewrite.status = "accepted"
                 proposal_row.output = updated_output
+            from ainovel.mapper.field_history import append
+
+            await append(session, revision)
             session.add(RevisionRow(id=revision.id, story_id=story.id, payload=revision))
             if confirmed_generation_id is not None:
                 generation = await session.get(CommandRow, confirmed_generation_id, with_for_update=True)
@@ -799,15 +815,26 @@ class Store:
         New command handlers call this before changing durable state. Immutable revisions,
         chunks and audit events are retained; only their active pointers are compensated.
         """
-        scope_id = story_id or submission.story_id or submission.session_id or submission.id
+        scope_id = story_id or submission.operation_scope_id
         await self.lock_operation_scope(session, scope_id)
+        await self.check_resource(session, scope_id, allow_deleted=True)
+        if submission.session_id is not None:
+            await self.lock_operation_scope(session, submission.session_id)
+            await self.check_resource(session, submission.session_id, allow_deleted=submission.payload.kind in (
+                "set_setup_draft_deleted", "undo", "recover_command",
+            ))
         if isinstance(submission.payload, SavePromptTemplateRequest):
             already_recorded = await session.scalar(
                 select(OperationRow.id).where(OperationRow.command_id == submission.id).limit(1)
             )
             if already_recorded is not None:
                 return
-        before = OperationMemento(story_id=story_id or submission.story_id)
+        readonly_chat = submission.payload.kind in ("discussion", "start_discussion", "character_chat", "start_character_chat")
+        before = OperationMemento(story_id=None if readonly_chat else story_id or submission.story_id)
+        if submission.payload.kind == "set_setup_draft_deleted":
+            before.draft_id = submission.session_id
+            barrier = await session.get(ResourceDeletionRow, submission.session_id)
+            before.draft_deleted = bool(barrier and barrier.status == "deleted")
         if before.story_id:
             story = await session.get(StoryRow, before.story_id, with_for_update=True)
             if story:
@@ -847,8 +874,7 @@ class Store:
             if row is None:
                 raise ValueError("关联命令不存在")
             raw_checkpoint = await session.scalar(
-                text("SELECT checkpoint FROM commands WHERE id = :command_id"),
-                {"command_id": command_id},
+                select(cast(CommandRow.__table__.c.checkpoint, Text)).where(CommandRow.id == command_id)
             )
             checkpoint = None
             checkpoint_raw = None
@@ -869,6 +895,12 @@ class Store:
                 )
             )
         session.add(OperationRow(scope_id=scope_id, command_id=submission.id, before=before))
+
+    @staticmethod
+    async def check_resource(session: AsyncSession, resource_id: UUID, allow_deleted: bool = False) -> None:
+        barrier = await session.get(ResourceDeletionRow, resource_id)
+        if barrier and (barrier.status == "purged" or not allow_deleted):
+            raise ConflictError("资料已永久删除" if barrier.status == "purged" else "创作草稿已移入回收站，请先恢复")
 
     async def lock_operation_scope(self, session: AsyncSession, scope_id: UUID) -> None:
         if self.engine.dialect.name == "postgresql":

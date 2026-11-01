@@ -25,6 +25,16 @@ from ainovel.core.discussion import (
     DiscussionSession,
     StartDiscussionRequest,
 )
+from ainovel.core.fields import (
+    ApplyFieldTemplateRequest,
+    FieldTarget,
+    FieldTemplate,
+    FieldTemplateSet,
+    InitializeStoryTemplateSetRequest,
+    SaveFieldTemplateRequest,
+    SaveFieldTemplateSetRequest,
+    UpdateStoryFieldSchemaRequest,
+)
 from ainovel.core.records import (
     CollectionPatch,
     CustomField,
@@ -65,12 +75,14 @@ class Scene(Model):
     summary: str
     character_patches: list[CharacterPatch] = Field(default_factory=list)
     source_command_id: UUID | None = None
+    custom_fields: list[Entry] = Field(default_factory=list)
 
 
 class Chapter(Model):
     id: UUID = Field(default_factory=uuid4)
     title: str
     summary: str = ""
+    custom_fields: list[Entry] = Field(default_factory=list)
 
 
 class CreationProposal(Model):
@@ -121,6 +133,7 @@ class Story(Model):
     directions: list[Direction] = Field(default_factory=list)
     initial_snapshots: list[Snapshot] = Field(default_factory=list)
     custom_fields: list[CustomField] = Field(default_factory=list)
+    field_template_set: FieldTemplateSet | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -260,6 +273,8 @@ class SetupDraft(Model):
     edits: list[DraftFieldEdit] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=now)
     save_event_id: int = Field(default=0, ge=0)
+    field_template_ids: list[UUID] = Field(default_factory=list)
+    field_template_set_id: UUID | None = None
 
 
 class SaveSetupDraftRequest(Model):
@@ -267,10 +282,22 @@ class SaveSetupDraftRequest(Model):
     draft: SetupDraft
 
 
+class PurgeResult(Model):
+    command_ids: list[UUID] = Field(default_factory=list)
+    cache_ids: list[UUID] = Field(default_factory=list)
+
+
+class SetSetupDraftDeletedRequest(Model):
+    kind: Literal["set_setup_draft_deleted"] = "set_setup_draft_deleted"
+    deleted: bool
+
+
 class CreateStoryRequest(Model):
     kind: Literal["create_story"] = "create_story"
     proposal: CreationProposal = Field(validation_alias=AliasChoices("proposal", "setup"))
     confirmed: Literal[True]
+    field_template_ids: list[UUID] = Field(default_factory=list)
+    field_template_set_id: UUID | None = None
 
 
 class GenerateRequest(Model):
@@ -436,6 +463,7 @@ class DraftSelection(Model):
 
 
 class ReviewDraftRequest(Model):
+    text_only: bool = False
     kind: Literal["review_draft"] = "review_draft"
     generation_command_id: UUID
     expected_draft_version: int = Field(ge=1)
@@ -508,6 +536,7 @@ class RestoreStoryRequest(Model):
 
 
 class UndoRequest(Model):
+    scope_id: UUID | None = None
     kind: Literal["undo"] = "undo"
     expected_operation_id: int = Field(gt=0)
     target_command_id: UUID | None = None
@@ -555,6 +584,13 @@ class CharacterEdit(Model):
     reason: str = ""
 
 
+class EditFieldsRequest(Model):
+    kind: Literal["edit_fields"] = "edit_fields"
+    target: FieldTarget
+    patch: CollectionPatch[Entry]
+    reason: str = Field(default="更新自定义字段", min_length=1)
+
+
 class ApprovalResponse(Model):
     decision: Literal["accept", "reject"]
     character: CharacterSpec | None = None
@@ -588,9 +624,16 @@ Request = Annotated[
     | UndoRequest
     | RecoverCommandRequest
     | SaveSetupDraftRequest
+    | SetSetupDraftDeletedRequest
     | UpdateStoryRequest
     | ReviewDraftRequest
-    | SavePromptTemplateRequest,
+    | SavePromptTemplateRequest
+    | SaveFieldTemplateRequest
+    | ApplyFieldTemplateRequest
+    | EditFieldsRequest
+    | SaveFieldTemplateSetRequest
+    | InitializeStoryTemplateSetRequest
+    | UpdateStoryFieldSchemaRequest,
     Field(discriminator="kind"),
 ]
 
@@ -603,8 +646,24 @@ class CommandSubmission(Model):
     session_id: UUID | None = None
     payload: Request
 
+    @property
+    def operation_scope_id(self) -> UUID:
+        if self.payload.kind in ("discussion", "start_discussion", "character_chat", "start_character_chat"):
+            return self.payload.session_id
+        if self.payload.kind == "undo" and self.payload.scope_id:
+            return self.payload.scope_id
+        return self.story_id or self.session_id or self.id
+
     @model_validator(mode="after")
     def revision_required(self) -> "CommandSubmission":
+        if self.payload.kind == "set_setup_draft_deleted":
+            if self.story_id is not None or self.base_revision_id is not None or self.session_id is None:
+                raise ValueError("草稿删除或恢复需要独立 session_id")
+            return self
+        if self.payload.kind in ("save_field_template", "save_field_template_set"):
+            if self.story_id is not None or self.base_revision_id is not None or self.session_id is None:
+                raise ValueError("字段模板保存需要独立 session_id，不能指定小说版本")
+            return self
         if self.payload.kind == "save_prompt_template":
             if self.payload.scope == "global":
                 if self.story_id is not None or self.base_revision_id is not None or self.session_id is None:
@@ -725,6 +784,7 @@ class WritingDraft(Model):
 
 
 class DraftReviewResponse(Model):
+    text_only: bool = False
     decision: Literal["confirm", "revise", "discard"]
     execution_command_id: UUID
     feedback: str = ""
@@ -839,6 +899,8 @@ class CommandOutput(Model):
     undone_command_ids: list[UUID] = Field(default_factory=list)
     writing_draft: WritingDraft | None = None
     prompt_template: PromptTemplateVersion | None = None
+    field_template: FieldTemplate | None = None
+    field_template_set: FieldTemplateSet | None = None
     recovered_command_id: UUID | None = None
     recovery_decision: Literal["retry", "withdraw"] | None = None
 
@@ -861,6 +923,7 @@ class NarrativeContext(Model):
 
 
 class WorkflowState(Model):
+    text_only_revision: bool = False
     command_id: UUID
     story: Story
     instruction: str
@@ -969,6 +1032,8 @@ class CommandMemento(Model):
 
 
 class OperationMemento(Model):
+    draft_id: UUID | None = None
+    draft_deleted: bool = False
     story_id: UUID | None = None
     story_existed: bool = False
     head_id: UUID | None = None

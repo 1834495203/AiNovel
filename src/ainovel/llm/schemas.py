@@ -22,6 +22,7 @@ from ainovel.core.domain import (
     StoryMaintenance,
     WorkflowState,
 )
+from ainovel.core.fields import FieldDefinition
 from ainovel.core.records import (
     CustomField,
     Entry,
@@ -210,9 +211,10 @@ class NarrativeInput(Model):
             else state.story.writer.model_copy(deep=True)
         )
         writer.notes = writer.notes[-24:]
-        writer.drafts = writer.drafts[-2:]
-        for draft in writer.drafts:
+        drafts = writer.drafts[-2:]
+        for draft in drafts:
             draft.content = draft.content[:1500]
+        writer.drafts = drafts
         return cls(
             feedback=state.feedback,
             revision_plan=state.revision_plan,
@@ -299,6 +301,7 @@ class EntryPromptBrief(Model):
     value: str | int | float | bool | None = None
     description: str = ""
     children: list["EntryPromptBrief"] = Field(default_factory=list)
+    definition: "FieldDefinition | None" = None
 
 
 class RecordPromptBrief(Model):
@@ -313,6 +316,13 @@ class RecordPromptBrief(Model):
 class PreferencePromptBrief(RecordPromptBrief):
     origin: Literal["explicit", "inferred"] = "explicit"
     confidence: float = 1
+    custom_fields: list[EntryPromptBrief] = Field(default_factory=list)
+
+
+class MaterialFieldsBrief(Model):
+    scope: str
+    entity_id: UUID
+    entries: list[EntryPromptBrief]
 
 
 class AliasPromptBrief(Model):
@@ -360,6 +370,7 @@ class AnalysisInput(Model):
     characters: list[CharacterPromptBrief] = Field(default_factory=list)
     recent_summaries: list[str] = Field(default_factory=list)
     feedback: str = ""
+    material_fields: list[MaterialFieldsBrief] = Field(default_factory=list)
 
 
 class WritingInput(Model):
@@ -393,6 +404,7 @@ class WritingInput(Model):
         default_factory=list,
         description="上一份未应用的修改列表，错误信息的修改编号对应本列表；修复时重新提交完整列表",
     )
+    material_fields: list[MaterialFieldsBrief] = Field(default_factory=list)
 
 
 class ReplanningInput(Model):
@@ -407,6 +419,7 @@ class JudgeInput(Model):
     world_premise: str = ""
     directions: list[Direction] = Field(default_factory=list)
     characters: list[CharacterPromptBrief] = Field(default_factory=list)
+    material_fields: list[MaterialFieldsBrief] = Field(default_factory=list)
 
 
 class RewritePlanInput(Model):
@@ -430,6 +443,7 @@ class FinalizationInput(Model):
     writer: WriterPromptBrief
     writer_patch: WriterPatch | None = None
     maintenance_due: bool = False
+    material_fields: list[MaterialFieldsBrief] = Field(default_factory=list)
 
 
 def project_context(schema: type[Model], state: WorkflowState, maintenance_interval: int = 5) -> Model:
@@ -442,6 +456,7 @@ def project_context(schema: type[Model], state: WorkflowState, maintenance_inter
             value=entry.value,
             description=entry.description,
             children=[entry_brief(child) for child in entry.children],
+            definition=entry.definition,
         )
 
     def preference_brief(item: Preference) -> PreferencePromptBrief:
@@ -452,6 +467,7 @@ def project_context(schema: type[Model], state: WorkflowState, maintenance_inter
             status="active" if item.active else "inactive",
             origin=item.origin,
             confidence=item.confidence,
+            custom_fields=[entry_brief(entry) for entry in item.custom_fields],
         )
 
     def writer_prompt(*, stage: bool = False) -> WriterPromptBrief:
@@ -514,11 +530,29 @@ def project_context(schema: type[Model], state: WorkflowState, maintenance_inter
             )
         return result
 
-    world = [entry_brief(entry) for entry in state.story.world.entries]
+    from ainovel.core.field_templates import definition_id
+
+    world = [
+        entry_brief(entry)
+        for entry in state.story.world.entries
+        if not entry.definition or entry.definition.id != definition_id("world", "premise")
+    ]
     likes = [preference_brief(item) for item in state.story.preferences.likes if item.active]
     dislikes = [preference_brief(item) for item in state.story.preferences.dislikes if item.active]
     writer = writer_prompt()
     due = maintenance_due(state, maintenance_interval)
+    material_fields = [
+        MaterialFieldsBrief(
+            scope=scope, entity_id=identity, entries=[entry_brief(entry) for entry in entries]
+        )
+        for scope, identity, entries in [
+            ("story", state.story.id, state.story.custom_fields),
+            ("preferences", state.story.id, state.story.preferences.custom_fields),
+            *[("chapter", item.id, item.custom_fields) for item in state.story.chapters[-1:]],
+            *[("scene", item.id, item.custom_fields) for item in state.story.scenes[-1:]],
+        ]
+        if entries
+    ]
 
     if schema is Plan and state.feedback:
         return ReplanningInput(
@@ -526,6 +560,7 @@ def project_context(schema: type[Model], state: WorkflowState, maintenance_inter
         )
     if schema in (PlanningDecision, Plan):
         return AnalysisInput(
+            material_fields=material_fields,
             title=state.story.title,
             instruction=state.instruction,
             first_scene=not state.story.scenes,
@@ -560,6 +595,7 @@ def project_context(schema: type[Model], state: WorkflowState, maintenance_inter
             raise ValueError("审阅缺少草稿")
         selected = state.plan.character_names if state.plan else []
         return JudgeInput(
+            material_fields=material_fields,
             instruction=state.instruction,
             world_premise=state.story.world.premise,
             constraints=state.intent.constraints if state.intent else [],
@@ -585,6 +621,7 @@ def project_context(schema: type[Model], state: WorkflowState, maintenance_inter
         if state.draft is None:
             raise ValueError("提取缺少最终正文")
         return FinalizationInput(
+            material_fields=material_fields,
             scene_id=state.scene_id,
             draft=state.draft,
             characters=characters(mentioned_only=True),
@@ -601,6 +638,7 @@ def project_context(schema: type[Model], state: WorkflowState, maintenance_inter
         if state.draft is None:
             raise ValueError("阶段整理缺少最终正文")
         return FinalizationInput(
+            material_fields=material_fields,
             scene_id=state.scene_id,
             draft=state.draft,
             instruction=state.instruction,
@@ -614,6 +652,7 @@ def project_context(schema: type[Model], state: WorkflowState, maintenance_inter
     if schema in (Draft, DraftRevisionResult):
         selected = state.plan.character_names if state.plan else []
         return WritingInput(
+            material_fields=material_fields,
             title=state.story.title,
             scene_id=state.scene_id,
             instruction=state.instruction,

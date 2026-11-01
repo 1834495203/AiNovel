@@ -6,22 +6,18 @@ from uuid import UUID, uuid4
 import pytest
 from test_integration import Harness
 
-from ainovel.core.characters import ProfilePatch, StatePatch
 from ainovel.core.discussion import (
     CharacterChange,
     DiscussionAction,
     DiscussionContext,
     DiscussionRequest,
     ReplyAction,
-    SearchStoryAction,
-    SearchStoryArguments,
     StartDiscussionRequest,
     UpdateSettingsAction,
     UpdateSettingsArguments,
 )
 from ainovel.core.domain import (
     CommandSubmission,
-    GenerateRequest,
     PromptTemplateVersion,
     RecoverCommandRequest,
     Trace,
@@ -29,12 +25,8 @@ from ainovel.core.domain import (
     UpdateStoryRequest,
 )
 from ainovel.core.records import (
-    CollectionPatch,
-    Entry,
-    PlotThread,
     StoryMetadataPatch,
     WorldPatch,
-    WriterPatch,
 )
 from ainovel.llm.mock import MockModel
 from ainovel.mapper.discussions import DiscussionRepository
@@ -106,62 +98,25 @@ async def test_discussion_old_session_and_stale_submission_read_latest_without_g
         assert not h.runtime.services.workflow.checkpoints.ready
         history = await DiscussionRepository(h.runtime.store).history(h.story_id, id)
         assert len(history) == 2
-        state = await UndoService(h.runtime.store).state(h.story_id)
-        await h.execute(UndoRequest(expected_operation_id=state.operation_id))
+        state = await UndoService(h.runtime.store).state(id)
+        await h.execute(UndoRequest(scope_id=id, expected_operation_id=state.operation_id))
         assert await DiscussionRepository(h.runtime.store).history(h.story_id, id) == []
     finally:
         await h.cleanup()
 
 
-async def test_discussion_tools_stage_world_role_and_plot_then_commit_and_undo_once() -> None:
-    h = Harness()
+async def test_discussion_rejects_mutating_model_actions_without_committing():
+    h = Harness(auto_confirm=False)
     await h.runtime.store.initialize()
     try:
         await h.create()
-        await h.execute(GenerateRequest(instruction="第一幕"))
         id = await session(h)
         before = await h.runtime.store.head(h.story_id)
-        character = before.story.characters[0]
-        trait, goal = Entry(name="性格调整", value="更谨慎"), Entry(name="近期目标", value="调查来信")
-        line = PlotThread(name="调查来信", progress="讨论后的计划")
-        script = ScriptedDiscussion(
-            h.runtime.sink,
-            [
-                SearchStoryAction(arguments=SearchStoryArguments(query="来信")),
-                UpdateSettingsAction(
-                    arguments=UpdateSettingsArguments(
-                        reason="用户要求调整设定与后续线路",
-                        patch=StoryMetadataPatch(
-                            world=WorldPatch(premise="魔法都市"),
-                            writer=WriterPatch(mainlines=CollectionPatch[PlotThread](upsert=[line])),
-                        ),
-                        characters=[
-                            CharacterChange(
-                                character_id=character.id,
-                                reason="用户要求角色更谨慎",
-                                profile=ProfilePatch(entries=CollectionPatch[Entry](upsert=[trait])),
-                                state=StatePatch(entries=CollectionPatch[Entry](upsert=[goal])),
-                            )
-                        ],
-                    )
-                ),
-                ReplyAction(reply="已保存新的设定与路线。"),
-            ],
-        )
-        h.runtime.services.model = script
-        result = await h.execute(DiscussionRequest(session_id=id, message="召回前文，然后调整设定与路线"))
-        assert result.status == "completed", result.error
-        after = await h.runtime.store.head(h.story_id)
-        assert result.output.discussion.updated_revision_id == after.revision_id
-        assert after.story.world.premise == "魔法都市" and line in after.story.writer.mainlines
-        assert trait in after.story.snapshot(character.id).profile.entries
-        assert goal in after.story.snapshot(character.id).state.entries
-        assert after.story.chapters == before.story.chapters
-        assert [scene.text for scene in after.story.scenes] == [scene.text for scene in before.story.scenes]
-        assert script.contexts[-1].story.world.premise == "魔法都市"
-        assert script.contexts[-1].tool_results[0].name == "search_story"
-        state = await UndoService(h.runtime.store).state(h.story_id)
-        await h.execute(UndoRequest(expected_operation_id=state.operation_id))
+        h.runtime.services.model = ScriptedDiscussion(h.runtime.sink, [UpdateSettingsAction(
+            arguments=UpdateSettingsArguments(patch=StoryMetadataPatch(world=WorldPatch(premise="禁止写入")), reason="修改要求")
+        )])
+        result = await h.execute(DiscussionRequest(session_id=id, message="修改世界观"))
+        assert result.status == "failed" and "只能查询和讨论" in result.error
         assert await h.runtime.store.head(h.story_id) == before
         assert await DiscussionRepository(h.runtime.store).history(h.story_id, id) == []
     finally:
@@ -182,7 +137,7 @@ async def test_discussion_sessions_isolate_history_but_share_latest_settings() -
         h.runtime.services.model = script
         await h.execute(DiscussionRequest(session_id=second, message="你读取了什么？"))
         assert script.contexts[0].history == []
-        assert script.contexts[0].story.world.premise == "共同的新世界"
+        assert script.contexts[0].story.world.premise == "近未来都市"
         await h.execute(DiscussionRequest(session_id=first, message="继续讨论"))
         assert len(script.contexts[1].history) == 2
         sessions = await DiscussionRepository(h.runtime.store).sessions(h.story_id)
@@ -232,30 +187,18 @@ async def test_discussion_failure_has_no_partial_settings_and_retry_reads_new_he
         await h.cleanup()
 
 
-async def test_unknown_character_tool_reports_error_without_changing_story() -> None:
+async def test_unknown_character_tool_cannot_write_from_discussion():
     h = Harness(auto_confirm=False)
     await h.runtime.store.initialize()
     try:
         await h.create()
         id = await session(h)
         before = await h.runtime.store.head(h.story_id)
-        script = ScriptedDiscussion(
-            h.runtime.sink,
-            [
-                UpdateSettingsAction(
-                    arguments=UpdateSettingsArguments(
-                        reason="不存在的角色",
-                        characters=[CharacterChange(character_id=uuid4(), reason="修改角色")],
-                    )
-                ),
-                ReplyAction(reply="该角色不存在，未保存修改"),
-            ],
-        )
-        h.runtime.services.model = script
+        h.runtime.services.model = ScriptedDiscussion(h.runtime.sink, [UpdateSettingsAction(
+            arguments=UpdateSettingsArguments(characters=[CharacterChange(character_id=uuid4(), reason="不存在")], reason="测试")
+        )])
         result = await h.execute(DiscussionRequest(session_id=id, message="修改角色"))
-        assert result.status == "completed", result.error
-        assert not result.output.discussion.settings_changed
-        assert script.contexts[1].tool_results[0].success is False
+        assert result.status == "failed"
         assert await h.runtime.store.head(h.story_id) == before
     finally:
         await h.cleanup()

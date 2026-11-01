@@ -50,7 +50,8 @@ def test_typed_collection_patch_keeps_unmodified_records_and_rejects_conflicts()
     world = WorldPatch(entries=CollectionPatch[Entry](upsert=[rule])).apply(world)
     changed = rule.model_copy(update={"description": "代价需要支付记忆", "reason": "用户修改"})
     world = WorldPatch(entries=CollectionPatch[Entry](upsert=[changed])).apply(world)
-    assert len(world.entries) == 1 and world.entries[0].id == rule.id
+    assert world.premise == "城市"
+    assert next(item for item in world.entries if item.id == rule.id) == changed
     with pytest.raises(ValueError):
         CollectionPatch[Entry](upsert=[changed], remove=[rule.id])
     assert StatePatch(emotion="紧张").apply(Snapshot(character_id=uuid4()).state).entries[0].value == "紧张"
@@ -213,7 +214,9 @@ async def test_world_preferences_and_author_records_are_editable_and_atomically_
         )
         assert result.status == "completed", result.error
         current = (await h.runtime.store.head(h.story_id)).story
-        assert current.world.entries[0] == rule and current.world.entries[1].children[0].value == 10
+        assert rule in current.world.entries
+        assert next(item for item in current.world.entries if item.id == field.id).children[0].value == 10
+        assert current.world.premise == "近未来都市"
         assert like in current.preferences.likes and current.writer.mainlines[0] == thread
         assert (
             next(item for item in await h.runtime.store.stories() if item.id == h.story_id).title == "新名称"
@@ -514,7 +517,8 @@ async def test_ai_maintenance_is_committed_with_the_scene_and_recalled_by_next_r
         assert result.status == "completed", result.error
         await h.execute(GenerateRequest(instruction="继续"))
         story = (await h.runtime.store.head(h.story_id)).story
-        assert story.world.entries == [place]
+        assert place in story.world.entries
+        assert story.world.premise == "近未来都市"
         assert dislike in story.preferences.dislikes
         state = await h.runtime.store.checkpoint(h.ids[-1])
         context = NarrativeInput.from_state(state)

@@ -29,6 +29,35 @@ pytestmark = pytest.mark.skipif(os.getenv("AINOVEL_INTEGRATION") != "1", reason=
 T = TypeVar("T", bound=BaseModel)
 
 
+async def test_committed_scene_regeneration_keeps_its_original_plan():
+    h = Harness(auto_confirm=False)
+    await h.runtime.store.initialize()
+    try:
+        await h.create()
+        pending = await h.execute(GenerateRequest(instruction="第一幕"))
+        parent_id = pending.submission.id
+        original = await h.runtime.store.checkpoint(parent_id)
+        confirmed = await h.confirm_generation(parent_id)
+        assert confirmed.status == "completed", confirmed.error
+        state = await UndoService(h.runtime.store).state(h.story_id)
+        undone = await h.execute(UndoRequest(expected_operation_id=state.operation_id))
+        assert undone.status == "completed", undone.error
+        parent = await h.runtime.store.command(parent_id)
+        regenerated = await h.execute(ReviewDraftRequest(
+            generation_command_id=parent_id, expected_draft_version=parent.output.writing_draft.version,
+            decision="revise", text_only=True, feedback="重新生成正文",
+        ))
+        assert regenerated.status == "completed", regenerated.error
+        checkpoint = await h.runtime.store.checkpoint(regenerated.submission.id)
+        assert checkpoint.text_only_revision
+        assert not checkpoint.revision_plan.replan and not checkpoint.revision_plan.use_characters
+        assert checkpoint.revision_plan.new_character is None
+        assert checkpoint.plan == original.plan
+        assert not (await h.runtime.store.head(h.story_id)).story.scenes
+    finally:
+        await h.cleanup()
+
+
 async def test_draft_gate_survives_restart_and_commits_only_after_confirmation() -> None:
     h = Harness(auto_confirm=False)
     await h.runtime.store.initialize()

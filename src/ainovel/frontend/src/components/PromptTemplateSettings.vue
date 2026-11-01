@@ -131,9 +131,7 @@ async function runPreview() {
       else (context as Record<string, unknown>)[variable.name] = typeof value === "string" ? value : "";
     }
     const request: Schemas["PromptTemplatePreviewRequest"] = { task: task.value, source: source.value, guidance: "", context };
-    const response = await fetch("/api/prompt-templates/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
-    const data = await response.json() as PreviewResult & { detail?: string };
-    if (!response.ok) throw new Error(data.detail || "预览失败");
+    const data = await api.post<PreviewResult>("/api/prompt-templates/preview", request);
     preview.value = data;
   } catch (problem) {
     error.value = problem instanceof Error ? problem.message : "预览失败";
@@ -167,7 +165,7 @@ async function runPreview() {
                   <strong>{{ version.name }}</strong><span>v{{ version.version }}{{ version.builtin ? ' · 内置' : '' }}</span>
                 </button>
                 <p v-if="!versions.length" class="template-empty">当前范围沿用默认版本。</p>
-                <NButton block secondary class="template-history-link" @click="emit('close'); navigate(historyLink(scope === 'global' ? library?.tasks[0]?.global_active.scope_id : storyId))">查看运行历史</NButton>
+
               </aside>
               <main class="template-editor">
                 <div class="template-editor-heading"><div><label class="template-name-label">版本名称<NInput v-model:value="name" maxlength="100" placeholder="自定义模板" /></label></div><NTag size="small" type="info">完整源码</NTag></div>

@@ -1,4 +1,6 @@
 import type { components } from "./schema";
+import { updateDefaultFieldHelp } from "../ui/fields";
+import { formatApiError } from "./errors";
 
 export type Schemas = components["schemas"];
 type RequiredDeep<T> = T extends null | undefined ? T : T extends readonly (infer U)[] ? RequiredDeep<U>[] : T extends object
@@ -40,18 +42,32 @@ export async function latestEventId(commandId: string): Promise<number> {
 }
 
 async function decode<T>(response: Response): Promise<T> {
-  const data: unknown = await response.json();
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(response.ok
+      ? `服务返回的数据格式不正确（HTTP ${response.status}），请查看 API 终端日志。`
+      : `服务器请求失败（HTTP ${response.status}），请查看 API 终端日志。`);
+  }
   if (!response.ok) {
-    const detail = typeof data === "object" && data !== null && "detail" in data
-      ? String(data.detail) : `请求失败（${response.status}）`;
-    throw new Error(detail);
+    throw new Error(formatApiError(data, response.status));
   }
   return data as T;
 }
 
 export const api = {
+  async post<T>(path: string, body: unknown): Promise<T> {
+    return decode(await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+  },
+  async remove(path: string): Promise<Schemas["PurgeResult"]> {
+    return decode(await fetch(path, { method: "DELETE" }));
+  },
   get<T>(path: string): Promise<T> {
-    return fetch(path).then(response => decode<T>(response));
+    return fetch(path).then(response => decode<T>(response)).then(value => {
+      if (path === "/api/field-templates") updateDefaultFieldHelp((value as Schemas["FieldTemplateLibrary"]).templates ?? []);
+      return value;
+    });
   },
   async submit(payload: CommandPayload, storyId: string | null, revisionId: string | null,
     sessionId: string | null = null): Promise<CommandView> {

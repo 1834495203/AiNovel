@@ -3,9 +3,10 @@
 from typing import Generic, Literal, TypeVar
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
-from pydantic import Field, model_validator
+from pydantic import Field, computed_field, model_validator
 
 from ainovel.core.base import Model
+from ainovel.core.fields import FieldDefinition
 
 
 class Entry(Model):
@@ -16,6 +17,57 @@ class Entry(Model):
     reason: str = ""
     children: list["Entry"] = Field(default_factory=list)
     source_scene_id: UUID | None = None
+    definition: FieldDefinition | None = None
+
+    @model_validator(mode="after")
+    def validate_value(self) -> "Entry":
+        ids = [child.id for child in self.children]
+        if len(ids) != len(set(ids)):
+            raise ValueError("同一字段下的子条目 ID 不可重复")
+        definition = self.definition
+        if definition is None:
+            return self
+        if definition.type in ("object", "list"):
+            if self.value is not None:
+                raise ValueError("对象和列表通过子字段保存内容")
+            if definition.type == "object":
+                expected = {item.id: item for item in definition.children}
+                actual = [child.definition.id for child in self.children if child.definition]
+                if len(actual) != len(set(actual)):
+                    raise ValueError("对象字段定义不可重复")
+                if not definition.allow_extra and any(
+                    child.definition is None or child.definition.id not in expected for child in self.children
+                ):
+                    raise ValueError("此对象不允许新增模板以外的字段")
+                if any(
+                    child.definition
+                    and child.definition.id in expected
+                    and child.definition != expected[child.definition.id]
+                    for child in self.children
+                ):
+                    raise ValueError("子字段定义与对象模板不一致")
+            if (
+                definition.type == "list"
+                and definition.item
+                and any(child.definition != definition.item for child in self.children)
+            ):
+                raise ValueError("列表项必须使用列表定义中的字段结构")
+        else:
+            if self.children:
+                raise ValueError("标量字段不能包含子字段")
+            if self.value is not None:
+                valid = {
+                    "text": isinstance(self.value, str),
+                    "number": type(self.value) in (int, float),
+                    "boolean": isinstance(self.value, bool),
+                    "enum": self.value in definition.options,
+                    "reference": isinstance(self.value, str),
+                }.get(definition.type, False)
+                if not valid:
+                    raise ValueError(f"字段 {self.name} 的值与 {definition.type} 类型不匹配")
+                if definition.type == "reference":
+                    UUID(str(self.value))
+        return self
 
     def text(self) -> str:
         parts = [self.name, str(self.value) if self.value is not None else "", self.description]
@@ -70,15 +122,31 @@ def merge_records(items: list[T], patch: CollectionPatch[T]) -> list[T]:
 
 
 class WorldSetting(Model):
-    premise: str = ""
     entries: list[Entry] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
     def read_legacy_world(cls, value: object) -> object:
+        from ainovel.core.field_compat import migrate
         from ainovel.core.legacy import WORLD_FIELDS, migrate_entries
 
-        return {"premise": value} if isinstance(value, str) else migrate_entries(value, WORLD_FIELDS, "world")
+        if isinstance(value, str):
+            value = {"premise": value}
+        value = migrate(value, "world", ("premise",))
+        return migrate_entries(value, WORLD_FIELDS, "world")
+
+    @computed_field
+    @property
+    def premise(self) -> str:
+        from ainovel.core.field_compat import get
+
+        return str(get(self.entries, "world", "premise", "") or "")
+
+    @premise.setter
+    def premise(self, value: str) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "world", "premise", value)
 
 
 class WorldPatch(Model):
@@ -107,22 +175,73 @@ class Preference(Record):
 
 
 class ReaderPreferences(Model):
-    likes: list[Preference] = Field(default_factory=list)
-    dislikes: list[Preference] = Field(default_factory=list)
-    custom_fields: list[CustomField] = Field(default_factory=list)
+    entries: list[Entry] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_legacy(cls, value: object) -> object:
+        from ainovel.core.field_compat import migrate
+
+        return migrate(value, "preferences", ("likes", "dislikes"))
+
+    @computed_field
+    @property
+    def likes(self) -> list[Preference]:
+        from ainovel.core.field_compat import records
+
+        return records(self.entries, "preferences", "likes", Preference)
+
+    @likes.setter
+    def likes(self, value: list[Preference]) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "preferences", "likes", value)
+
+    @computed_field
+    @property
+    def dislikes(self) -> list[Preference]:
+        from ainovel.core.field_compat import records
+
+        return records(self.entries, "preferences", "dislikes", Preference)
+
+    @dislikes.setter
+    def dislikes(self, value: list[Preference]) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "preferences", "dislikes", value)
+
+    @computed_field
+    @property
+    def custom_fields(self) -> list[Entry]:
+        from ainovel.core.field_templates import DEFAULT_FIELDS, definition_id
+
+        known = {definition_id("preferences", key): kind for key, _, kind in DEFAULT_FIELDS["preferences"]}
+        return [
+            entry
+            for entry in self.entries
+            if entry.definition is None or known.get(entry.definition.id) != entry.definition.type
+        ]
+
+    @custom_fields.setter
+    def custom_fields(self, value: list[Entry]) -> None:
+        previous = {entry.id for entry in self.custom_fields}
+        self.entries = [entry for entry in self.entries if entry.id not in previous] + value
 
 
 class PreferencePatch(Model):
+    entries: CollectionPatch[Entry] = Field(default_factory=CollectionPatch[Entry])
     likes: CollectionPatch[Preference] = Field(default_factory=CollectionPatch[Preference])
     dislikes: CollectionPatch[Preference] = Field(default_factory=CollectionPatch[Preference])
     custom_fields: CollectionPatch[CustomField] = Field(default_factory=CollectionPatch[CustomField])
 
     def apply(self, preferences: ReaderPreferences) -> ReaderPreferences:
-        return ReaderPreferences(
-            likes=merge_records(preferences.likes, self.likes),
-            dislikes=merge_records(preferences.dislikes, self.dislikes),
-            custom_fields=merge_records(preferences.custom_fields, self.custom_fields),
-        )
+        result = preferences.model_copy(deep=True)
+        for key in ("likes", "dislikes", "custom_fields"):
+            patch = getattr(self, key)
+            if patch.upsert or patch.remove:
+                setattr(result, key, merge_records(getattr(result, key), patch))
+        result.entries = merge_records(result.entries, self.entries)
+        return result
 
 
 class PlotThread(Record):
@@ -157,19 +276,166 @@ class WorkingDraft(Record):
 
 
 class WriterWorkspace(Model):
-    mainlines: list[PlotThread] = Field(default_factory=list)
-    subplots: list[PlotThread] = Field(default_factory=list)
-    foreshadows: list[Foreshadow] = Field(default_factory=list)
-    outline: list[OutlineBeat] = Field(default_factory=list)
-    future_directions: list[PlotThread] = Field(default_factory=list)
-    notes: list[WriterNote] = Field(default_factory=list)
-    drafts: list[WorkingDraft] = Field(default_factory=list)
-    progress: str = ""
-    current_user_intent: str = ""
-    custom_fields: list[CustomField] = Field(default_factory=list)
+    entries: list[Entry] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_legacy(cls, value: object) -> object:
+        from ainovel.core.field_compat import migrate
+
+        return migrate(
+            value,
+            "writer",
+            (
+                "mainlines",
+                "subplots",
+                "foreshadows",
+                "outline",
+                "future_directions",
+                "notes",
+                "drafts",
+                "progress",
+                "current_user_intent",
+            ),
+        )
+
+    @computed_field
+    @property
+    def mainlines(self) -> list[PlotThread]:
+        from ainovel.core.field_compat import records
+
+        return records(self.entries, "writer", "mainlines", PlotThread)
+
+    @mainlines.setter
+    def mainlines(self, value: list[PlotThread]) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "writer", "mainlines", value)
+
+    @computed_field
+    @property
+    def subplots(self) -> list[PlotThread]:
+        from ainovel.core.field_compat import records
+
+        return records(self.entries, "writer", "subplots", PlotThread)
+
+    @subplots.setter
+    def subplots(self, value: list[PlotThread]) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "writer", "subplots", value)
+
+    @computed_field
+    @property
+    def foreshadows(self) -> list[Foreshadow]:
+        from ainovel.core.field_compat import records
+
+        return records(self.entries, "writer", "foreshadows", Foreshadow)
+
+    @foreshadows.setter
+    def foreshadows(self, value: list[Foreshadow]) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "writer", "foreshadows", value)
+
+    @computed_field
+    @property
+    def outline(self) -> list[OutlineBeat]:
+        from ainovel.core.field_compat import records
+
+        return records(self.entries, "writer", "outline", OutlineBeat)
+
+    @outline.setter
+    def outline(self, value: list[OutlineBeat]) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "writer", "outline", value)
+
+    @computed_field
+    @property
+    def future_directions(self) -> list[PlotThread]:
+        from ainovel.core.field_compat import records
+
+        return records(self.entries, "writer", "future_directions", PlotThread)
+
+    @future_directions.setter
+    def future_directions(self, value: list[PlotThread]) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "writer", "future_directions", value)
+
+    @computed_field
+    @property
+    def notes(self) -> list[WriterNote]:
+        from ainovel.core.field_compat import records
+
+        return records(self.entries, "writer", "notes", WriterNote)
+
+    @notes.setter
+    def notes(self, value: list[WriterNote]) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "writer", "notes", value)
+
+    @computed_field
+    @property
+    def drafts(self) -> list[WorkingDraft]:
+        from ainovel.core.field_compat import records
+
+        return records(self.entries, "writer", "drafts", WorkingDraft)
+
+    @drafts.setter
+    def drafts(self, value: list[WorkingDraft]) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "writer", "drafts", value)
+
+    @computed_field
+    @property
+    def progress(self) -> str:
+        from ainovel.core.field_compat import get
+
+        return str(get(self.entries, "writer", "progress", "") or "")
+
+    @progress.setter
+    def progress(self, value: str) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "writer", "progress", value)
+
+    @computed_field
+    @property
+    def current_user_intent(self) -> str:
+        from ainovel.core.field_compat import get
+
+        return str(get(self.entries, "writer", "current_user_intent", "") or "")
+
+    @current_user_intent.setter
+    def current_user_intent(self, value: str) -> None:
+        from ainovel.core.field_compat import put
+
+        put(self.entries, "writer", "current_user_intent", value)
+
+    @computed_field
+    @property
+    def custom_fields(self) -> list[Entry]:
+        from ainovel.core.field_templates import DEFAULT_FIELDS, definition_id
+
+        known = {definition_id("writer", key): kind for key, _, kind in DEFAULT_FIELDS["writer"]}
+        return [
+            entry
+            for entry in self.entries
+            if entry.definition is None or known.get(entry.definition.id) != entry.definition.type
+        ]
+
+    @custom_fields.setter
+    def custom_fields(self, value: list[Entry]) -> None:
+        previous = {entry.id for entry in self.custom_fields}
+        self.entries = [entry for entry in self.entries if entry.id not in previous] + value
 
 
 class WriterPatch(Model):
+    entries: CollectionPatch[Entry] = Field(default_factory=CollectionPatch[Entry])
     mainlines: CollectionPatch[PlotThread] = Field(default_factory=CollectionPatch[PlotThread])
     subplots: CollectionPatch[PlotThread] = Field(default_factory=CollectionPatch[PlotThread])
     foreshadows: CollectionPatch[Foreshadow] = Field(default_factory=CollectionPatch[Foreshadow])
@@ -193,11 +459,14 @@ class WriterPatch(Model):
             "drafts",
             "custom_fields",
         ):
-            setattr(result, name, merge_records(getattr(result, name), getattr(self, name)))
+            patch = getattr(self, name)
+            if patch.upsert or patch.remove:
+                setattr(result, name, merge_records(getattr(result, name), patch))
         if self.progress is not None:
             result.progress = self.progress
         if self.current_user_intent is not None:
             result.current_user_intent = self.current_user_intent
+        result.entries = merge_records(result.entries, self.entries)
         return result
 
 

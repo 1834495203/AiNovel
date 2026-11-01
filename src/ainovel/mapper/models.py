@@ -18,6 +18,8 @@ from ainovel.core.domain import (
     SetupDraft,
     WorkflowState,
 )
+from ainovel.core.field_history import FieldChangeEvent, FieldSnapshot
+from ainovel.core.fields import FieldTemplate, FieldTemplateSet
 from ainovel.mapper.types import ModelJSON
 from ainovel.utils.time import now
 
@@ -41,6 +43,28 @@ class RevisionRow(Base):
     payload: Mapped[Revision] = mapped_column(ModelJSON(Revision))
 
 
+class FieldChangeRow(Base):
+    __tablename__ = "field_changes"
+    revision_id: Mapped[UUID] = mapped_column(primary_key=True)
+    story_id: Mapped[UUID] = mapped_column(index=True)
+    parent_id: Mapped[UUID | None] = mapped_column(index=True)
+    payload: Mapped[FieldChangeEvent] = mapped_column(ModelJSON(FieldChangeEvent))
+
+
+class FieldSnapshotRow(Base):
+    __tablename__ = "field_snapshots"
+    revision_id: Mapped[UUID] = mapped_column(primary_key=True)
+    story_id: Mapped[UUID] = mapped_column(index=True)
+    payload: Mapped[FieldSnapshot] = mapped_column(ModelJSON(FieldSnapshot))
+
+
+class FieldTemplateRow(Base):
+    __tablename__ = "field_templates"
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    command_id: Mapped[UUID] = mapped_column(index=True, unique=True)
+    payload: Mapped[FieldTemplate] = mapped_column(ModelJSON(FieldTemplate))
+
+
 class CommandRow(Base):
     __tablename__ = "commands"
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -52,6 +76,13 @@ class CommandRow(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class FieldTemplateSetRow(Base):
+    __tablename__ = "field_template_sets"
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    command_id: Mapped[UUID] = mapped_column(index=True, unique=True)
+    payload: Mapped[FieldTemplateSet] = mapped_column(ModelJSON(FieldTemplateSet))
 
 
 class OperationRow(Base):
@@ -69,6 +100,14 @@ class SetupDraftRow(Base):
     __tablename__ = "setup_drafts"
     id: Mapped[UUID] = mapped_column(primary_key=True)
     payload: Mapped[SetupDraft] = mapped_column(ModelJSON(SetupDraft))
+
+
+class ResourceDeletionRow(Base):
+    """Content-free lifecycle barriers prevent stale requests resurrecting deleted data."""
+
+    __tablename__ = "resource_deletions"
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    status: Mapped[str] = mapped_column(String(20))
 
 
 class PromptTemplateVersionRow(Base):

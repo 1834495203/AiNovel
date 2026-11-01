@@ -8,6 +8,7 @@ __pycache__/
 .idea/
 diagnostics/
 node_modules/
+.npm-cache/
 build/
 dist/
 .tmp/

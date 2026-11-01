@@ -3,27 +3,29 @@ import { ref } from "vue";
 import { NButton, NDrawer, NDrawerContent, NInput, NTag } from "naive-ui";
 import { type Schemas } from "../api/client";
 import EntryTreeNode from "./EntryTreeNode.vue";
+import FieldDefinitionEditor from "./FieldDefinitionEditor.vue";
+import { instantiateField } from "../ui/fields";
 
 type EntryOutput = Schemas["Entry-Output"];
 type EntryInput = Schemas["Entry-Input"];
 const props = defineProps<{ title: string; entries: EntryOutput[]; disabled: boolean; note?: string }>();
-const emit = defineEmits<{ save: [entry: EntryInput]; remove: [id: string] }>();
+const emit = defineEmits<{ save: [entry: EntryInput]; saveMany: [entries: EntryInput[]]; remove: [id: string] }>();
 const adding = ref(false);
-const draftName = ref("");
-const draftDescription = ref("");
+const definitions = ref<Schemas["FieldDefinition-Input"][]>([]);
 function add() {
-  const name = draftName.value.trim();
-  if (!name || props.disabled) return;
-  emit("save", { id: crypto.randomUUID(), name, description: draftDescription.value.trim(), reason: "用户在故事资料中补充" });
-  draftName.value = ""; draftDescription.value = ""; adding.value = false;
+  if (props.disabled || !definitions.value.length || definitions.value.some(field => !field.name.trim())) return;
+  // Save all new fields in one event through the batch callback when available.
+  emit("saveMany", definitions.value.map(instantiateField));
+  definitions.value = []; adding.value = false;
 }
+
 </script>
 
 <template>
   <section class="entry-collection">
     <header class="entry-collection-heading"><div><h4>{{ title }} <NTag size="small" round :bordered="false">{{ entries.length }}</NTag></h4><p v-if="note">{{ note }}</p></div><NButton size="small" secondary :disabled="disabled" @click="adding = !adding">{{ adding ? "取消" : "添加条目" }}</NButton></header>
     <NDrawer :show="adding" placement="right" :width="'min(420px, 100vw)'" @update:show="visible => adding = visible"><NDrawerContent title="新增资料条目" closable>
-      <form v-if="adding" class="entry-add-form" @submit.prevent="add"><label>名称<NInput v-model:value="draftName" required maxlength="160" placeholder="例如：潮汐规则" aria-label="条目名称"/></label><label>内容<NInput v-model:value="draftDescription" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" placeholder="写下具体内容" aria-label="条目内容"/></label><div class="entry-add-actions"><NButton secondary attr-type="button" @click="adding = false">取消</NButton><NButton attr-type="submit" type="primary" :disabled="disabled || !draftName.trim()">保存条目</NButton></div></form>
+      <form v-if="adding" class="entry-add-form" @submit.prevent="add"><FieldDefinitionEditor :fields="definitions" @change="value => definitions = value" /><NButton attr-type="submit" type="primary" :disabled="disabled || !definitions.length">保存字段</NButton></form>
     </NDrawerContent></NDrawer>
     <EntryTreeNode v-for="entry in entries" :key="entry.id" :entry="entry" :disabled="disabled" :is-root="true" @save="emit('save',$event)" @remove="emit('remove',$event)"/>
   <p v-if="!entries.length && !adding" class="entry-empty">还没有记录。可以先写下一个具体条目，之后再继续补充。</p>

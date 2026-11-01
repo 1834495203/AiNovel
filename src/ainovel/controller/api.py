@@ -24,6 +24,7 @@ from ainovel.core.domain import (
     PromptTemplateLibrary,
     PromptTemplatePreview,
     PromptTemplatePreviewRequest,
+    PurgeResult,
     Revision,
     SetupDraft,
     StorySummary,
@@ -31,9 +32,22 @@ from ainovel.core.domain import (
     UndoState,
 )
 from ainovel.core.errors import ConflictError, StoryUnavailableError
+from ainovel.core.field_history import FieldChangeEvent
+from ainovel.core.fields import (
+    ExportStoryFieldSchemaRequest,
+    FieldScope,
+    FieldTarget,
+    FieldTemplate,
+    FieldTemplateSet,
+)
 from ainovel.core.prompting import preview_prompt_source
+from ainovel.core.records import Entry
+from ainovel.core.story_fields import export_story_schema, story_schema
 from ainovel.infrastructure.job_queue import JobQueue
 from ainovel.mapper.discussions import DiscussionRepository
+from ainovel.mapper.field_history import history as field_history
+from ainovel.mapper.field_templates import FieldTemplateRepository
+from ainovel.service.fields import FIELD_TEMPLATE_SCOPE_ID, read_fields
 from ainovel.service.history import HistoryPage, project_history
 from ainovel.service.prompt_templates import template_library
 from ainovel.service.run_overview import RunOverview, build_run_overview
@@ -41,6 +55,18 @@ from ainovel.service.run_overview import RunOverview, build_run_overview
 
 class ErrorBody(Model):
     detail: str
+
+
+class FieldTemplateLibrary(Model):
+    session_id: UUID = FIELD_TEMPLATE_SCOPE_ID
+    templates: list[FieldTemplate]
+    template_sets: list[FieldTemplateSet] = []
+
+
+class FieldDocumentView(Model):
+    revision_id: UUID
+    target: FieldTarget
+    entries: list[Entry]
 
 
 def create_app(settings: Settings | None = None, job_queue: JobQueue | None = None) -> FastAPI:
@@ -55,6 +81,35 @@ def create_app(settings: Settings | None = None, job_queue: JobQueue | None = No
         await runtime.close()
 
     app = FastAPI(title="AI Novel MVP", version="0.1.0", lifespan=lifespan)
+
+    @app.get("/api/field-templates", response_model=FieldTemplateLibrary)
+    async def field_templates() -> FieldTemplateLibrary:
+        repository = FieldTemplateRepository(runtime.store)
+        return FieldTemplateLibrary(templates=await repository.list(), template_sets=await repository.list_sets())
+
+    @app.get("/api/stories/{story_id}/field-template-set", response_model=FieldTemplateSet)
+    async def local_field_schema(story_id: UUID) -> FieldTemplateSet:
+        view = await runtime.store.head(story_id)
+        return story_schema(view.story)
+
+    @app.post("/api/stories/{story_id}/field-template-set/export", response_model=FieldTemplateSet)
+    async def export_field_schema(story_id: UUID, request: ExportStoryFieldSchemaRequest) -> FieldTemplateSet:
+        view = await runtime.store.head(story_id)
+        if request.revision_id != view.revision_id:
+            raise ConflictError("小说版本已变化，请刷新后导出")
+        return export_story_schema(view.story, request.name, request.description, request.targets)
+
+    @app.get("/api/stories/{story_id}/fields", response_model=FieldDocumentView)
+    async def fields(story_id: UUID, scope: FieldScope, entity_id: UUID | None = None) -> FieldDocumentView:
+        view = await runtime.store.head(story_id)
+        target = FieldTarget(scope=scope, entity_id=entity_id)
+        return FieldDocumentView(revision_id=view.revision_id, target=target, entries=read_fields(view.story, target))
+
+    @app.get("/api/stories/{story_id}/field-history", response_model=list[FieldChangeEvent])
+    async def fields_history(story_id: UUID, revision_id: UUID | None = None, limit: int = Query(default=50, ge=1, le=200)) -> list[FieldChangeEvent]:
+        view = await runtime.store.head(story_id)
+        async with runtime.store.sessions() as session:
+            return await field_history(session, story_id, revision_id or view.revision_id, limit)
     web = Path(__file__).resolve().parents[1] / "web"
     ui = web / "ui"
     app.mount("/assets", WebAssets(directory=web), name="assets")
@@ -236,10 +291,22 @@ def create_app(settings: Settings | None = None, job_queue: JobQueue | None = No
         return await runtime.store.session_commands(session_id)
 
     @app.get("/api/drafts", response_model=list[SetupDraft])
-    async def drafts() -> list[SetupDraft]:
+    async def drafts(deleted: bool = False) -> list[SetupDraft]:
         from ainovel.mapper.drafts import DraftRepository
 
-        return await DraftRepository(runtime.store).list()
+        return await DraftRepository(runtime.store).list(deleted=deleted)
+
+    @app.delete("/api/drafts/{draft_id}", response_model=PurgeResult)
+    async def purge_draft(draft_id: UUID) -> PurgeResult:
+        from ainovel.service.lifecycle import purge_resource
+
+        return await purge_resource(runtime.store, queue, draft_id, draft=True)
+
+    @app.delete("/api/stories/{story_id}", response_model=PurgeResult)
+    async def purge_story(story_id: UUID) -> PurgeResult:
+        from ainovel.service.lifecycle import purge_resource
+
+        return await purge_resource(runtime.store, queue, story_id, draft=False)
 
     @app.get("/api/drafts/{draft_id}", response_model=SetupDraft)
     async def draft(draft_id: UUID) -> SetupDraft:

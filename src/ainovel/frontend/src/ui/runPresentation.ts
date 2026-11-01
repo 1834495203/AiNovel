@@ -8,9 +8,11 @@ const labels: Record<string, string> = {
   character_chat: "角色阶段对话", start_character_chat: "创建角色会话", delete_story: "移入回收站",
   restore_story: "恢复作品", reindex: "重建召回索引", save_prompt_template: "修改提示词",
   save_setup_draft: "保存构思草稿", undo: "撤回最新操作", recover_command: "恢复失败任务", revert: "恢复作品版本",
+  save_field_template_set: "另存小说模板套装", initialize_story_template_set: "初始化本书模板套装", update_story_field_schema: "修改本书初始化字段结构",
 };
 export function operationLabel(command: CommandView): string {
   const p = command.submission.payload;
+  if (p.kind === "set_setup_draft_deleted") return p.deleted ? "创作草稿移入回收站" : "恢复创作草稿";
   if (p.kind === "review_draft") return { confirm: "确认正文并保存资料", revise: "按意见修改草稿", discard: "放弃草稿" }[p.decision];
   if (p.kind === "resolve_character") return { consent: "同意引入新角色", accept: "确认角色档案", reject: "拒绝新角色" }[p.decision];
   return labels[p.kind] || "作品操作";

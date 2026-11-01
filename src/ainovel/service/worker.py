@@ -96,11 +96,17 @@ class Worker:
 
     async def load_command(self, command_id: UUID) -> CommandView | None:
         try:
+            if await self.runtime.store.command_lifecycle(command_id) is None:
+                return None
             return await self.runtime.store.command(command_id, strict_checkpoint=True)
         except InvalidCheckpointError as error:
             logger.error("Command %s has an invalid checkpoint: %s", command_id, error.summary)
             await self.runtime.store.fail_invalid_checkpoint(command_id, error.summary)
             return None
+        except ValueError:
+            if await self.runtime.store.command_lifecycle(command_id) is None:
+                return None
+            raise
 
     async def run(self) -> None:
         recovery = asyncio.create_task(self.recover())

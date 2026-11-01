@@ -73,6 +73,8 @@ LangGraph 官方机制参考：[子图](https://docs.langchain.com/oss/python/la
 
 ## 数据模型
 
+`Story.field_template_set` 保存本书独立的八类初始化定义副本。模板库套装只在创建或用户显式应用时读取，后续新角色、章节和幕从本书副本初始化；已有对象的字段增删改不回写模板。副本随小说版本、字段事件及撤回保存，旧小说按已有资料派生。导出从实际资料提取无填写值的定义，并作为独立模板库命令另存新套装；详情见 `custom-fields.md`。
+
 Story 的正式状态不再包含 setup：顶层是 title、world、preferences、writer、characters、chapters、scenes、directions、initial_snapshots 和 custom_fields。CreationProposal 只表示创建前提案；旧 StorySetup 是兼容旧输入的别名。旧 JSON 读取时转换为新模型，不就地覆盖历史版本。
 
 | 对象 | 结构与更新规则 |

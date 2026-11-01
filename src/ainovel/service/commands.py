@@ -43,6 +43,7 @@ from ainovel.core.domain import (
     RewriteRequest,
     SavePromptTemplateRequest,
     SaveSetupDraftRequest,
+    SetSetupDraftDeletedRequest,
     StartCharacterChatRequest,
     Story,
     Trace,
@@ -126,6 +127,8 @@ class Services:
     ) -> CommandOutput:
         from ainovel.service.workflow_trace import IndexInput
 
+        story = Story.model_validate(story.model_dump(round_trip=True))
+
         await self.store.append_event(
             Event(
                 command_id=submission.id,
@@ -160,6 +163,10 @@ class Services:
         if state.draft is None or state.extraction is None or state.plan is None:
             raise ValueError("生成流程未完成")
         story = state.story.model_copy(deep=True)
+        from ainovel.core.fields import FieldTarget
+        from ainovel.core.story_fields import ensure_story_schema, initial_fields
+
+        ensure_story_schema(story)
         chapter = (
             story.chapters[-1]
             if story.chapters and not state.new_chapter
@@ -169,6 +176,7 @@ class Services:
         )
         if not story.chapters or state.new_chapter:
             story.chapters.append(chapter)
+            chapter.custom_fields = initial_fields(story, FieldTarget(scope="chapter", entity_id=chapter.id), chapter.custom_fields)
         patches = [
             CharacterPatch(
                 character_id=update.character_id,
@@ -193,9 +201,11 @@ class Services:
                 source_command_id=state.execution_id,
             )
         )
+        story.scenes[-1].custom_fields = initial_fields(story, FieldTarget(scope="scene", entity_id=state.scene_id), story.scenes[-1].custom_fields)
         chapter.summary = "\n".join(scene.summary for scene in story.scenes if scene.chapter_id == chapter.id)
         story.writer = state.plan.writer_patch.apply(story.writer)
-        story.writer.drafts.append(
+        drafts = story.writer.drafts
+        drafts.append(
             WorkingDraft(
                 id=state.scene_id,
                 name=state.draft.title,
@@ -207,7 +217,7 @@ class Services:
             )
         )
         # Keep the latest working copies; older copies remain in prior immutable revisions.
-        story.writer.drafts = story.writer.drafts[-12:]
+        story.writer.drafts = drafts[-12:]
         if state.maintenance:
             story.apply_metadata(state.maintenance.patch)
         for direction in story.directions:
@@ -259,6 +269,15 @@ class SaveSetupDraftHandler(Handler[SaveSetupDraftRequest]):
         return await DraftRepository(self.services.store).save(submission, request)
 
 
+class SetSetupDraftDeletedHandler(Handler[SetSetupDraftDeletedRequest]):
+    request_type = SetSetupDraftDeletedRequest
+
+    async def execute(self, submission: CommandSubmission, request: SetSetupDraftDeletedRequest) -> CommandOutput:
+        from ainovel.mapper.drafts import DraftRepository
+
+        return await DraftRepository(self.services.store).set_deleted(submission, request.deleted)
+
+
 class CreateStoryHandler(Handler[CreateStoryRequest]):
     request_type = CreateStoryRequest
 
@@ -281,6 +300,21 @@ class CreateStoryHandler(Handler[CreateStoryRequest]):
             )
             for character in story.characters
         ]
+        from ainovel.core.field_templates import default_template_set
+        from ainovel.mapper.field_templates import FieldTemplateRepository
+        from ainovel.service.fields import initialize_story_schema
+
+        repository = FieldTemplateRepository(self.services.store)
+        if request.field_template_set_id and request.field_template_ids:
+            raise ValueError("请选择小说模板套装，不能同时指定旧版分类模板")
+        template_set = await repository.get_set(request.field_template_set_id or default_template_set().id)
+        if request.field_template_ids:
+            selected = [await repository.get(identity) for identity in request.field_template_ids]
+            scopes = [item.scope for item in selected]
+            if len(scopes) != len(set(scopes)):
+                raise ValueError("每类资料只能选择一个初始化模板")
+            template_set.templates = [item for item in template_set.templates if item.scope not in scopes] + selected
+        initialize_story_schema(story, template_set)
         return await self.services.commit(submission, story, "确认设定，创建小说")
 
 
@@ -815,10 +849,24 @@ class CommandBus:
     def __init__(self, services: Services) -> None:
         from ainovel.service.discussion import DiscussionHandler, StartDiscussionHandler
         from ainovel.service.draft_review import ReviewDraftHandler
+        from ainovel.service.fields import (
+            ApplyFieldTemplateHandler,
+            EditFieldsHandler,
+            InitializeStoryTemplateSetHandler,
+            SaveFieldTemplateHandler,
+            SaveFieldTemplateSetHandler,
+            UpdateStoryFieldSchemaHandler,
+        )
         from ainovel.service.recovery import RecoverCommandHandler
 
         self.services = services
         self.handlers = (
+            ApplyFieldTemplateHandler(services),
+            EditFieldsHandler(services),
+            SaveFieldTemplateHandler(services),
+            SaveFieldTemplateSetHandler(services),
+            InitializeStoryTemplateSetHandler(services),
+            UpdateStoryFieldSchemaHandler(services),
             DiscussionHandler(services),
             StartDiscussionHandler(services),
             RecoverCommandHandler(services),
@@ -836,6 +884,7 @@ class CommandBus:
             CharacterChatHandler(services),
             StartCharacterChatHandler(services),
             SaveSetupDraftHandler(services),
+            SetSetupDraftDeletedHandler(services),
             SavePromptTemplateHandler(services),
             ReindexHandler(services),
             DeleteStoryHandler(services),

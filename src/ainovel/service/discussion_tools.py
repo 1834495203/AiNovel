@@ -6,10 +6,12 @@ from ainovel.core.characters import Alias, CharacterPatch
 from ainovel.core.discussion import (
     DiscussionCharacter,
     DiscussionExcerpt,
+    DiscussionFields,
     DiscussionStory,
     UpdateSettingsArguments,
 )
 from ainovel.core.domain import Story
+from ainovel.core.fields import FieldTarget
 from ainovel.core.records import merge_records
 
 
@@ -29,6 +31,8 @@ def context_story(story: Story, revision_id: UUID, recent_scenes: int) -> Discus
             DiscussionExcerpt(title=scene.title, text=scene.text, summary=scene.summary)
             for scene in story.scenes[-recent_scenes:]
         ],
+        field_documents=[DiscussionFields(target=FieldTarget(scope=scope, entity_id=item.id), name=item.title, entries=item.custom_fields)
+            for scope, items in (("chapter", story.chapters), ("scene", story.scenes)) for item in items],
     )
 
 

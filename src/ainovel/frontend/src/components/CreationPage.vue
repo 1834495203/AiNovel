@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import ConversationActions from "./ConversationActions.vue";
+import ConversationLog from "./ConversationLog.vue";
 import { computed, onBeforeUnmount, onMounted, ref, toRaw } from "vue";
-import { NButton, NCard, NInput, NTag } from "naive-ui";
-import { navigate, historyLink } from "../ui/navigation";
+import { NButton, NCard, NInput, NSelect, NTag } from "naive-ui";
+import { navigate } from "../ui/navigation";
 import { api, type CommandPayload, type CommandView, type Schemas, type SetupDraft } from "../api/client";
 
 const props = defineProps<{ draftId?: string }>();
@@ -17,13 +19,26 @@ const pendingCommand = ref<CommandView | null>(null);
 const checklist = ref<Schemas["CreationField"][]>([]);
 const saveStatus = ref<"saved" | "saving" | "error">("saved");
 const toast = ref("");
+const fieldLibrary = ref<Schemas["FieldTemplateLibrary"] | null>(null);
+void api.get<Schemas["FieldTemplateLibrary"]>("/api/field-templates").then(value => fieldLibrary.value = value).catch(error => say(error.message));
 const title = computed({ get: () => draft.value?.title ?? "新故事草稿", set: value => { if (draft.value) draft.value.title = value; } });
-const premise = computed({ get: () => draft.value?.proposal?.world.premise ?? "", set: value => { if (draft.value?.proposal) draft.value.proposal.world.premise = value; } });
+const premise = computed({ get: () => draft.value?.proposal?.world.premise ?? "", set: value => {
+  const proposal = draft.value?.proposal;
+  if (!proposal) return;
+  const definitionId = fieldLibrary.value?.templates.find(item => item.builtin && item.scope === "world")?.fields?.[0]?.id;
+  const entry = definitionId ? proposal.world.entries.find(item => item.definition?.id === definitionId) : undefined;
+  if (entry) entry.value = value;
+  proposal.world = { ...proposal.world, premise: value };
+} });
 const currentProposal = computed(() => draft.value?.proposal ?? null);
 const failedCommands = computed(() => history.value.filter(item => item.status === "failed" && !item.undone && item.submission.payload.kind === "interview"));
 let saveTimer = 0;
 let loadGeneration = 0;
 
+function turnCommand(index: number) {
+  const ordinal = turns.value.slice(0, index + 1).filter(turn => turn.role === 'assistant').length - 1;
+  return history.value.filter(item => !item.undone && !!item.output.interview)[ordinal];
+}
 function say(message: string) { toast.value = message; window.setTimeout(() => { if (toast.value === message) toast.value = ""; }, 4500); }
 async function persist() {
   if (!draft.value) return;
@@ -120,7 +135,7 @@ async function load() {
     if (pendingCommand.value) void monitorPending(pendingCommand.value);
   } else {
     draft.value = { id: crypto.randomUUID(), title: "新故事草稿", input_text: "", pending_input: "", proposal: null,
-      editing_setup: false, edits: [], updated_at: new Date().toISOString(), save_event_id: 0 };
+      editing_setup: false, edits: [], updated_at: new Date().toISOString(), save_event_id: 0, field_template_ids: [], field_template_set_id: null };
     turns.value = [];
     checklist.value = [];
     input.value = "";
@@ -207,8 +222,14 @@ async function createStory() {
   if (!draft.value?.proposal || !premise.value.trim() || busy.value) return;
   busy.value = true;
   try {
-    const proposal: Proposal = { ...draft.value.proposal, title: title.value.trim(), world: { ...draft.value.proposal.world, premise: premise.value.trim() } };
-    const result = await api.command({ kind: "create_story", confirmed: true, proposal }, null, null, draft.value.id, () => undefined);
+    const worldFields: Schemas["Entry-Input"][] = [...draft.value.proposal.world.entries];
+    const definition = fieldLibrary.value?.templates.find(item => item.builtin && item.scope === "world")?.fields?.[0];
+    if (definition && !worldFields.some(item => item.definition?.id === definition.id)) {
+      worldFields.push({ id: crypto.randomUUID(), name: definition.name, definition, value: premise.value.trim(), description: "", reason: "创建世界观" });
+    }
+    const proposal: Proposal = { ...draft.value.proposal, title: title.value.trim(), world: { entries: worldFields } };
+    const result = await api.command({ kind: "create_story", confirmed: true, proposal, field_template_set_id: draft.value.field_template_set_id ?? null,
+      field_template_ids: draft.value.field_template_set_id ? [] : draft.value.field_template_ids ?? [] }, null, null, draft.value.id, () => undefined);
     if (result.output.story_id) emit("created", result.output.story_id);
     else throw new Error("创建结果缺少作品 ID");
   } catch (error) { say(error instanceof Error ? error.message : "创建失败"); }
@@ -218,20 +239,24 @@ async function createStory() {
 
 <template>
   <main class="creation-page">
-    <header class="work-heading"><div><span class="eyebrow">新作品构思</span><h1>先认识你的故事</h1><p class="muted">通过专门的故事访谈整理设定；确认前这些内容只是草稿。</p></div><div class="creation-header-actions"><NTag class="creation-save-state" size="small" round :bordered="false" :type="saveStatus === 'error' ? 'error' : 'success'" role="status">{{ saveStatus === "saving" ? "正在保存草稿…" : saveStatus === "error" ? "草稿保存失败" : "草稿已保存" }}</NTag><NButton secondary size="small" @click="navigate(historyLink(draft?.id))">运行历史</NButton><NButton quaternary size="small" @click="emit('back')">返回书架</NButton></div></header>
+    <header class="work-heading"><div><span class="eyebrow">新作品构思</span><h1>先认识你的故事</h1><p class="muted">通过专门的故事访谈整理设定；确认前这些内容只是草稿。</p></div><div class="creation-header-actions"><NTag class="creation-save-state" size="small" round :bordered="false" :type="saveStatus === 'error' ? 'error' : 'success'" role="status">{{ saveStatus === "saving" ? "正在保存草稿…" : saveStatus === "error" ? "草稿保存失败" : "草稿已保存" }}</NTag><NButton quaternary size="small" @click="emit('back')">返回书架</NButton></div></header>
     <section class="creation-layout">
       <div class="creation-chat">
         <div class="chat-history" aria-live="polite">
-          <article v-for="(turn, index) in turns" :key="index" :class="['chat-bubble', turn.role === 'user' ? 'user-bubble' : 'assistant-bubble']"><small>{{ turn.role === 'user' ? '你' : '构思助手' }}</small>{{ turn.content }}</article>
-          <p v-if="pendingCommand" class="creation-pending" role="status">{{ pendingCommand.status === "queued" ? "访谈已排队，等待开始…" : "访谈正在处理中；离开后会自动恢复进度。" }} <NButton text size="small" @click="navigate(historyLink(draft?.id, pendingCommand.submission.id))">查看运行历史</NButton></p>
-          <article v-for="command in failedCommands" :key="command.submission.id" class="creation-failure" role="alert"><strong>这轮访谈没有完成</strong><p>{{ command.error || "任务失败，可以重试或撤回。" }}</p><div><NButton text @click="navigate(historyLink(draft?.id, command.submission.id))">在运行历史中处理</NButton></div></article>
+          <article v-for="(turn, index) in turns" :key="index" :class="['chat-bubble', turn.role === 'user' ? 'user-bubble' : 'assistant-bubble']"><small>{{ turn.role === 'user' ? '你' : '构思助手' }}</small>{{ turn.content }}<ConversationLog v-if="turn.role === 'assistant' && turnCommand(index)" :command="turnCommand(index)!" /></article>
+          <p v-if="pendingCommand" class="creation-pending" role="status">{{ pendingCommand.status === "queued" ? "访谈已排队，等待开始…" : "访谈正在处理中；离开后会自动恢复进度。" }} </p>
+          <article v-for="command in failedCommands" :key="command.submission.id" class="creation-failure" role="alert"><strong>这轮访谈没有完成</strong><p>{{ command.error || "任务失败，可以重试或撤回。" }}</p><div></div></article>
           <div v-if="!turns.length && !pendingCommand" class="empty-state"><h2>故事的起点是什么？</h2><p>说说你想写的故事，AI 会协助梳理世界、人物和阅读偏好。</p></div>
         </div>
+        <ConversationActions :key="draft?.id" :command="history.filter(item => !item.undone && item.submission.payload.kind === 'interview').at(-1)" :scope-key="`creation-${draft?.id}`" :disabled="busy || !!pendingCommand" @changed="load" />
         <form class="discussion-composer" @submit.prevent="interview"><NInput v-model:value="input" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" :disabled="busy" placeholder="例如：我想写一部关于记忆会被魔法交换的悬疑小说……" @input="draft && (draft.input_text = input); scheduleSave()"/><NButton type="primary" attr-type="submit" :disabled="busy || !input.trim()" :loading="busy">{{ busy ? "正在构思…" : "继续聊" }}</NButton></form>
       </div>
       <NCard class="proposal-card" :bordered="false"><template #header><div><span class="eyebrow">当前故事设定</span><p class="muted">可检查、可修改的提案；确认后才会创建正式作品。</p></div></template>
         <section v-if="checklist.length" class="creation-checklist" aria-label="构思进度"><h2>构思进度</h2><ul><li v-for="field in checklist" :key="field.key" :class="`field-${field.status}`"><span>{{ field.status === "defined" ? "✓" : field.status === "deferred" ? "—" : "○" }}</span><div><strong>{{ field.label }}</strong><small>{{ field.summary || (field.status === "defined" ? "已整理" : field.status === "deferred" ? "暂不设定" : "待讨论") }}</small></div></li></ul></section>
         <template v-if="currentProposal"><label>作品名<NInput v-model:value="title" maxlength="200" @input="scheduleSave"/></label><label>世界观与基本方向<NInput v-model:value="premise" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }" @input="scheduleSave"/></label>
+          <label v-if="draft && fieldLibrary">小说模板套装<NSelect v-model:value="draft.field_template_set_id" aria-label="小说模板套装" clearable :options="(fieldLibrary.template_sets ?? []).map(item => ({ value: item.id, label: item.name }))" placeholder="留空使用默认小说模板" @update:value="() => { if (draft) draft.field_template_ids = []; scheduleSave(); }" /></label>
+          <p v-if="draft && fieldLibrary" class="notice">每部小说复制独立的字段结构。后续新增角色、章节和幕自动初始化，字段增删改不会修改原模板。</p>
+          <p v-if="draft?.field_template_ids?.length && !draft.field_template_set_id" class="notice">此草稿保留了旧版分类模板选择；选择小说模板套装后会替换该选择。</p>
           <article class="proposal-summary"><h3>人物</h3><p>{{ currentProposal.characters.map(item => item.name).join("、") || "暂不设定，之后可以继续补充" }}</p><h3>阅读偏好</h3><p>{{ currentProposal.preferences.likes.map(item => item.name).join("、") || "暂不设定" }}</p><h3>避免的写法</h3><p>{{ currentProposal.preferences.dislikes.map(item => item.name).join("、") || "暂不设定" }}</p></article>
           <NButton type="primary" block :disabled="busy || !premise.trim()" :loading="busy" @click="createStory">确认设定并创建作品</NButton>
         </template><p v-else-if="!checklist.length" class="notice">聊过几轮后，提案会显示在这里。</p>

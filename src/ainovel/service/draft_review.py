@@ -57,7 +57,9 @@ class ReviewDraftHandler(Handler[ReviewDraftRequest]):
                 else:
                     state = state.model_copy(deep=True)
                     state.execution_command_id = submission.id
+                    state.text_only_revision = state.text_only_revision or request.text_only
                     state.review_response = DraftReviewResponse(
+                        text_only=state.text_only_revision,
                         decision=request.decision,
                         execution_command_id=submission.id,
                         feedback=request.feedback,
