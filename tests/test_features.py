@@ -16,6 +16,7 @@ from ainovel.core.domain import (
     DirectionRequest,
     Draft,
     GenerateRequest,
+    PlanSceneRequest,
     RestoreStoryRequest,
 )
 from ainovel.core.errors import StoryUnavailableError
@@ -94,7 +95,7 @@ async def test_chapter_decisions_follow_planner_and_user_instruction() -> None:
         assert after.story.scenes[0].chapter_id == after.story.scenes[1].chapter_id
         assert after.story.scenes[2].chapter_id != after.story.scenes[1].chapter_id
         checkpoint = await harness.runtime.store.checkpoint(third.submission.id)
-        assert all(direction.scope != "chapter" for direction in checkpoint.context.directions)
+        assert checkpoint.plan.start_new_chapter
         assert "new_chapter" not in second.submission.payload.model_dump_json()
     finally:
         await harness.cleanup()
@@ -110,6 +111,7 @@ async def test_delete_restore_and_all_normal_access_are_consistent() -> None:
         await harness.create()
         await harness.execute(GenerateRequest(instruction="第一幕"))
         original = await harness.runtime.store.head(harness.story_id)
+        revision_count = len(await harness.runtime.store.revisions(harness.story_id))
         pending = CommandSubmission(
             story_id=harness.story_id,
             base_revision_id=harness.head,
@@ -153,7 +155,7 @@ async def test_delete_restore_and_all_normal_access_are_consistent() -> None:
         current = await harness.runtime.store.head(harness.story_id)
         assert current == original
         assert any(story.id == harness.story_id for story in await harness.runtime.store.stories())
-        assert len(await harness.runtime.store.revisions(harness.story_id)) == 2
+        assert len(await harness.runtime.store.revisions(harness.story_id)) == revision_count
         assert (await harness.runtime.store.command(pending.id)).status == "failed"
     finally:
         await harness.cleanup()
@@ -165,11 +167,11 @@ class PausedWriter(MockModel):
         self.started = asyncio.Event()
         self.resume = asyncio.Event()
 
-    async def generate(self, schema, task, context, command_id):
-        if schema is Draft:
+    async def choose_agent_tool(self, context, command_id, *, prompt_template=None):
+        if context.task == "writing":
             self.started.set()
             await self.resume.wait()
-        return await super().generate(schema, task, context, command_id)
+        return await super().choose_agent_tool(context, command_id, prompt_template=prompt_template)
 
 
 @pytest.mark.skipif(
@@ -181,12 +183,16 @@ async def test_inflight_writer_cannot_resurrect_deleted_story() -> None:
     task = None
     try:
         await harness.create()
+        await harness.execute(PlanSceneRequest(instruction="正在生成"))
+        from ainovel.service.scene_planning import next_scene
+
+        planned = next_scene((await harness.runtime.store.head(harness.story_id)).story)
         paused = PausedWriter(harness.runtime.sink)
-        harness.runtime.services.workflow.model = paused
+        harness.runtime.services.writing_agent.model = paused
         submission = CommandSubmission(
             story_id=harness.story_id,
             base_revision_id=harness.head,
-            payload=GenerateRequest(instruction="正在生成"),
+            payload=GenerateRequest(instruction="正在生成", planned_scene_id=planned.id),
         )
         harness.ids.append(submission.id)
         await harness.runtime.store.submit(submission)

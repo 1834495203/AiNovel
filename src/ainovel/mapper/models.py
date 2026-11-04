@@ -16,7 +16,7 @@ from ainovel.core.domain import (
     PromptTemplateVersion,
     Revision,
     SetupDraft,
-    WorkflowState,
+    WritingState,
 )
 from ainovel.core.field_history import FieldChangeEvent, FieldSnapshot
 from ainovel.core.fields import FieldTemplate, FieldTemplateSet
@@ -72,7 +72,7 @@ class CommandRow(Base):
     status: Mapped[str] = mapped_column(String(20), index=True, default="queued")
     payload: Mapped[CommandSubmission] = mapped_column(ModelJSON(CommandSubmission))
     output: Mapped[CommandOutput] = mapped_column(ModelJSON(CommandOutput), default=CommandOutput)
-    checkpoint: Mapped[WorkflowState | None] = mapped_column(ModelJSON(WorkflowState))
+    checkpoint: Mapped[WritingState | None] = mapped_column(ModelJSON(WritingState))
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

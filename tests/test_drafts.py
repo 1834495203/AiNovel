@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from configured_fields import make_world
 from sqlalchemy import update
 from test_integration import Harness
 
@@ -15,15 +16,14 @@ from ainovel.core.domain import (
     CharacterChatRequest,
     CommandSubmission,
     CreateStoryRequest,
+    CreationProposal,
     Direction,
     DirectionRequest,
     DraftFieldEdit,
     GenerateRequest,
     InterviewRequest,
-    ResolveCharacterRequest,
     SaveSetupDraftRequest,
     SetupDraft,
-    StorySetup,
     Turn,
     UndoRequest,
 )
@@ -55,7 +55,7 @@ async def test_draft_recovers_dialogue_input_and_incomplete_edits_after_new_runt
             title="正在构思的故事",
             input_text="未发送的下一句话",
             pending_input="正在提交的输入",
-            setup=StorySetup(title="原设定", world="近未来"),
+            proposal=CreationProposal(title="原设定", world=make_world("近未来")),
             editing_setup=True,
             edits=[
                 DraftFieldEdit(key="title", value=""),
@@ -131,7 +131,9 @@ async def test_existing_interview_is_discoverable_and_creation_archives_draft() 
         created = await execute_session(
             h,
             session_id,
-            CreateStoryRequest(confirmed=True, setup=StorySetup(title="合成草稿", world="都市")),
+            CreateStoryRequest(
+                confirmed=True, proposal=CreationProposal(title="合成草稿", world=make_world("都市"))
+            ),
         )
         h.story_id = created.output.story_id
         h.head = created.output.revision_id
@@ -187,27 +189,14 @@ async def test_sequential_undo_rejects_older_target_and_restores_later_effects_o
         await h.cleanup()
 
 
-async def test_sequential_generation_undo_restores_each_approval_frame() -> None:
+async def test_sequential_undo_restores_preparation_generation_and_confirmation() -> None:
     h = Harness()
     await h.runtime.store.initialize()
     try:
         await h.create()
         initial = h.head
-        generation = await h.execute(GenerateRequest(instruction="引入一个新角色 NPC"))
-        consent = await h.execute(
-            ResolveCharacterRequest(generation_command_id=generation.submission.id, decision="consent")
-        )
-        await h.execute(
-            ResolveCharacterRequest(
-                generation_command_id=generation.submission.id,
-                decision="accept",
-                character=consent.output.character,
-            )
-        )
-        await h.worker.process(generation.submission.id)
-        h.head = (await h.runtime.store.head(h.story_id)).revision_id
-        state = await UndoService(h.runtime.store).state(h.story_id)
-        for _ in range(4):
+        generation = await h.execute(GenerateRequest(instruction="按幕计划写正文"))
+        for _ in range(3):
             state = await UndoService(h.runtime.store).state(h.story_id)
             result = await h.execute(
                 UndoRequest(expected_operation_id=state.operation_id, target_command_id=state.command_id)
@@ -232,7 +221,7 @@ async def test_round_undo_clears_future_setup_edits_and_rejects_late_autosave() 
         draft = SetupDraft(
             id=session_id,
             input_text="保留未发送的输入",
-            setup=StorySetup(title="后续设定", world="未来"),
+            proposal=CreationProposal(title="后续设定", world=make_world("未来")),
             editing_setup=True,
             edits=[DraftFieldEdit(key="world", value="未来内容")],
         )

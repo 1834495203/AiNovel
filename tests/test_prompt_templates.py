@@ -54,7 +54,7 @@ async def test_template_resolution_inherits_defaults_and_honors_story_and_run_ov
     )
     story_override = PromptTemplateVersion(
         id=uuid4(), scope="story", scope_id=story_id,
-        task="judge", name="作品审阅", version=1, guidance="重点关注节奏",
+        task="discussion", name="作品审阅", version=1, guidance="重点关注节奏",
     )
     explicit_old = PromptTemplateVersion(
         id=uuid4(), scope="global", scope_id=GLOBAL_PROMPT_SCOPE_ID,
@@ -68,7 +68,7 @@ async def test_template_resolution_inherits_defaults_and_honors_story_and_run_ov
     assert [item.task for item in resolved] == list(PROMPT_TASKS)
     assert resolved[0].builtin is True
     assert next(item for item in resolved if item.task == "writing").id == global_override.id
-    assert next(item for item in resolved if item.task == "judge").id == story_override.id
+    assert next(item for item in resolved if item.task == "discussion").id == story_override.id
     selected = await resolve_run_templates(
         store, story_id, [PromptTemplateSelection(task="writing", version_id=explicit_old.id)]
     )
@@ -151,5 +151,5 @@ def test_jinja_render_supports_user_context_and_rejects_invalid_or_unknown_varia
 def test_preview_context_defaults_do_not_invent_story_facts():
     context = PromptTemplatePreviewContext()
     assert not context.instruction and not context.story_title and not context.current_scene_summary
-    rendered = preview_prompt_source("planning", None, context)
+    rendered = preview_prompt_source("scene_planning", None, context)
     assert "首次创作必须建立故事骨架" not in rendered.text

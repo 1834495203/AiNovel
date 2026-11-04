@@ -41,7 +41,7 @@ class ScriptedDiscussion(MockModel):
         self.actions = actions
         self.contexts: list[DiscussionContext] = []
 
-    async def choose_discussion_tool(
+    async def choose_agent_tool(
         self,
         context: DiscussionContext,
         command_id: UUID,
@@ -77,6 +77,8 @@ async def test_discussion_old_session_and_stale_submission_read_latest_without_g
     await h.runtime.store.initialize()
     try:
         await h.create()
+        script = ScriptedDiscussion(h.runtime.sink, [ReplyAction(reply="已读取资料")])
+        h.runtime.services.model = script
         old = h.head
         id = await session(h)
         changed = await h.execute(
@@ -92,10 +94,10 @@ async def test_discussion_old_session_and_stale_submission_read_latest_without_g
         await h.worker.process(submission.id)
         reply = await h.runtime.store.command(submission.id)
         assert reply.status == "completed", reply.error
-        assert "最新世界规则" in reply.output.discussion.reply
+        assert script.contexts[-1].story.world.premise == "最新世界规则"
         assert reply.output.discussion.read_revision_id == changed.output.revision_id
         assert reply.output.revision_id is None and not reply.output.discussion.settings_changed
-        assert not h.runtime.services.workflow.checkpoints.ready
+        assert await h.runtime.store.checkpoint(submission.id) is None
         history = await DiscussionRepository(h.runtime.store).history(h.story_id, id)
         assert len(history) == 2
         state = await UndoService(h.runtime.store).state(id)
@@ -112,9 +114,16 @@ async def test_discussion_rejects_mutating_model_actions_without_committing():
         await h.create()
         id = await session(h)
         before = await h.runtime.store.head(h.story_id)
-        h.runtime.services.model = ScriptedDiscussion(h.runtime.sink, [UpdateSettingsAction(
-            arguments=UpdateSettingsArguments(patch=StoryMetadataPatch(world=WorldPatch(premise="禁止写入")), reason="修改要求")
-        )])
+        h.runtime.services.model = ScriptedDiscussion(
+            h.runtime.sink,
+            [
+                UpdateSettingsAction(
+                    arguments=UpdateSettingsArguments(
+                        patch=StoryMetadataPatch(world=WorldPatch(premise="禁止写入")), reason="修改要求"
+                    )
+                )
+            ],
+        )
         result = await h.execute(DiscussionRequest(session_id=id, message="修改世界观"))
         assert result.status == "failed" and "只能查询和讨论" in result.error
         assert await h.runtime.store.head(h.story_id) == before
@@ -194,9 +203,16 @@ async def test_unknown_character_tool_cannot_write_from_discussion():
         await h.create()
         id = await session(h)
         before = await h.runtime.store.head(h.story_id)
-        h.runtime.services.model = ScriptedDiscussion(h.runtime.sink, [UpdateSettingsAction(
-            arguments=UpdateSettingsArguments(characters=[CharacterChange(character_id=uuid4(), reason="不存在")], reason="测试")
-        )])
+        h.runtime.services.model = ScriptedDiscussion(
+            h.runtime.sink,
+            [
+                UpdateSettingsAction(
+                    arguments=UpdateSettingsArguments(
+                        characters=[CharacterChange(character_id=uuid4(), reason="不存在")], reason="测试"
+                    )
+                )
+            ],
+        )
         result = await h.execute(DiscussionRequest(session_id=id, message="修改角色"))
         assert result.status == "failed"
         assert await h.runtime.store.head(h.story_id) == before

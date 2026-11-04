@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import cast, column, delete, func, select, table, text
+from sqlalchemy import cast, delete, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -108,12 +108,6 @@ async def purge(store: Store, resource_id: UUID, *, draft: bool) -> PurgeResult:
                 acquired = await session.scalar(select(func.pg_try_advisory_xact_lock(command_id.int % (2**63 - 1))))
                 if not acquired:
                     raise ConflictError("后台任务仍在结束处理中，请稍后重试永久删除")
-            for name in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
-                if await session.scalar(text("SELECT to_regclass(:name)"), {"name": name}):
-                    checkpoint_table = table(name, column("thread_id"))
-                    await session.execute(delete(checkpoint_table).where(
-                        checkpoint_table.c.thread_id.in_([str(identifier) for identifier in command_ids])
-                    ))
         revision_ids = select(RevisionRow.id).where(RevisionRow.story_id.in_(story_ids))
         await session.execute(delete(ChunkRow).where(ChunkRow.revision_id.in_(revision_ids)))
         for model in (FieldChangeRow, FieldSnapshotRow, RevisionRow):

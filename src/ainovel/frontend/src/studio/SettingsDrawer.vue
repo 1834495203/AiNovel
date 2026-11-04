@@ -1,0 +1,23 @@
+<script setup lang="ts">
+import {computed,onBeforeUnmount,ref,watch} from 'vue';
+import {NAlert,NButton,NCollapse,NCollapseItem,NDrawer,NDrawerContent,NFormItem,NInput,NInputNumber,NSelect,NTabPane,NTabs} from 'naive-ui';
+import {studio,type Compression,type Novel,type Preview} from '../studio-api';
+const props=defineProps<{show:boolean;mobile:boolean;novel:Novel;sceneId:string;archiveId:string;draft:string;busy:boolean;defaults:Record<string,string>;tools:Record<string,unknown[]>}>();
+const emit=defineEmits<{'update:show':[value:boolean];save:[payload:{compression:Compression;prompts:Record<string,string>;context_source:string}]}>();
+const compression=ref<Compression>({...props.novel.compression}),prompts=ref<Record<string,string>>({}),context=ref(''),mode=ref('gm'),preview=ref<Preview|null>(null),error=ref(''),estimating=ref(false);
+const modes=[{label:'创建小说',value:'creation'},{label:'GM 演绎',value:'gm'},{label:'角色扮演',value:'role'},{label:'正文写作',value:'writing'},{label:'章节摘要',value:'summary'}];
+let timer=0,seq=0;
+const payload=computed(()=>({compression:compression.value,prompts:prompts.value,context_source:context.value}));
+async function estimate(){const id=++seq;estimating.value=true;try{const value=await studio<Preview>(`/novels/${props.novel.id}/estimate`,{...payload.value,scene_id:props.sceneId,branch_id:props.archiveId,message:props.draft});if(id===seq){preview.value=value;error.value=''}}catch(e){if(id===seq)error.value=e instanceof Error?e.message:String(e)}finally{if(id===seq)estimating.value=false}}
+watch(()=>props.show,show=>{if(show){compression.value={...props.novel.compression};prompts.value={...props.defaults,...props.novel.prompts};context.value=props.novel.context_source;mode.value=props.novel.created?'gm':'creation';estimate()}else{clearTimeout(timer);++seq}});
+watch(payload,()=>{if(!props.show)return;clearTimeout(timer);timer=window.setTimeout(estimate,450)},{deep:true});
+onBeforeUnmount(()=>{clearTimeout(timer);++seq});
+</script>
+<template><NDrawer :show="show" @update:show="emit('update:show',$event)" :placement="mobile?'bottom':'right'" :width="mobile?undefined:650" :height="mobile?'calc(var(--app-height,100dvh) - 16px)':undefined" class="workspace-drawer"><NDrawerContent title="上下文与设置" closable :native-scrollbar="false">
+ <div class="context-stat"><span>预计下一次输入</span><strong>{{preview?.input_tokens.toLocaleString()??'—'}} <small>token</small></strong><p>{{estimating?'正在更新估算…':'调整范围后自动更新，尚未保存的设置不会影响当前运行。'}}</p></div>
+ <NAlert v-if="error" type="error">{{error}}</NAlert>
+ <NTabs type="line" animated><NTabPane name="context" tab="上下文"><div class="settings-section"><h3>章节保留范围</h3><p>先使用完整章节，再使用幕级内容，更早的章节使用摘要。缺少有效摘要时保留全文。</p><div class="form-grid"><NFormItem label="最近完整章节数"><NInputNumber v-model:value="compression.full_chapters" :min="0" :max="100" :input-props="{'aria-label':'最近完整章节数'}"/></NFormItem><NFormItem label="再往前的幕级章节数"><NInputNumber v-model:value="compression.scene_chapters" :min="0" :max="100" :input-props="{'aria-label':'幕级章节数'}"/></NFormItem></div><h3>演绎与状态</h3><div class="form-grid"><NFormItem label="每轮模型调用预算"><NInputNumber v-model:value="compression.max_calls" :min="1" :max="100" :input-props="{'aria-label':'调用预算'}"/></NFormItem><NFormItem label="角色快照间隔（幕）"><NInputNumber v-model:value="compression.snapshot_interval" :min="1" :max="100"/></NFormItem></div><NCollapse><NCollapseItem title="查看实际发送的上下文" name="preview"><pre class="schema-block">{{JSON.stringify(preview?.messages,null,2)}}</pre></NCollapseItem></NCollapse></div></NTabPane>
+ <NTabPane name="prompts" tab="提示词"><p class="drawer-copy">行为提示词与上下文布局使用 Jinja2，工具 Schema 单独提供。</p><NSelect v-model:value="mode" :options="modes"/><NFormItem label="行为 Jinja 模板" class="code-form"><NInput v-model:value="prompts[mode]" type="textarea" :autosize="{minRows:12,maxRows:24}" :input-props="{'aria-label':'行为Jinja模板',spellcheck:false}"/></NFormItem><NFormItem label="上下文 Jinja 模板"><NInput v-model:value="context" type="textarea" :autosize="{minRows:5,maxRows:14}" :input-props="{'aria-label':'上下文Jinja模板',spellcheck:false}"/></NFormItem><p class="drawer-copy">变量 data 只包含当前模式允许读取的内容。角色资料在渲染前已按可见性过滤。</p></NTabPane>
+ <NTabPane name="schemas" tab="工具 Schema"><NSelect v-model:value="mode" :options="modes"/><pre class="schema-block">{{JSON.stringify(tools[mode],null,2)}}</pre></NTabPane></NTabs>
+ <template #footer><div class="drawer-footer"><NButton @click="emit('update:show',false)">关闭</NButton><NButton type="primary" :disabled="busy||!!error" :loading="busy" @click="emit('save',payload)">保存设置</NButton></div></template>
+</NDrawerContent></NDrawer></template>

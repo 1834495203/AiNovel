@@ -47,7 +47,7 @@ class OpenAICompatibleTransport:
 
     async def post(self, endpoint: Endpoint, body: BaseModel) -> str:
         response = await self.client.post(
-            endpoint, content=body.model_dump_json(), headers={"Content-Type": "application/json"}
+            endpoint, content=body.model_dump_json(exclude_none=True), headers={"Content-Type": "application/json"}
         )
         response.raise_for_status()
         return response.text

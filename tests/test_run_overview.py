@@ -17,7 +17,7 @@ from ainovel.core.domain import (
     Story,
     Trace,
     Usage,
-    WorkflowState,
+    WritingState,
 )
 from ainovel.core.records import Entry, WorldSetting
 from ainovel.service.run_overview import _steps, build_run_overview
@@ -187,7 +187,7 @@ async def test_waiting_draft_is_not_mislabeled_as_saved_or_stale():
     story_id, base_id = uuid4(), uuid4()
     story = Story(id=story_id, title="作品")
     view = command(story_id, base_id, status="waiting")
-    checkpoint = WorkflowState(
+    checkpoint = WritingState(
         command_id=view.submission.id, story=story, instruction="继续写", draft_status="pending"
     )
     store = MemoryStore(
@@ -209,7 +209,7 @@ async def test_character_profile_approval_is_distinct_from_draft_review():
     story_id, base_id = uuid4(), uuid4()
     story = Story(id=story_id, title="作品")
     view = command(story_id, base_id, status="waiting")
-    checkpoint = WorkflowState(
+    checkpoint = WritingState(
         command_id=view.submission.id,
         story=story,
         instruction="引入同伴",
@@ -233,7 +233,7 @@ async def test_fast_route_shows_skipped_independent_draft_review_after_write():
     story_id, base_id = uuid4(), uuid4()
     story = Story(id=story_id, title="作品")
     view = command(story_id, base_id, status="waiting")
-    checkpoint = WorkflowState(
+    checkpoint = WritingState(
         command_id=view.submission.id,
         story=story,
         instruction="续写",

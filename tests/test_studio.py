@@ -1,0 +1,657 @@
+import json
+from types import SimpleNamespace
+from uuid import uuid4
+
+import httpx
+import pytest
+from pydantic import ValidationError
+
+from ainovel.controller.api import create_app
+from ainovel.core.config import Settings
+from ainovel.core.entities import Attribute, Description, Entity, Visibility, visible_entity
+from ainovel.core.studio import Patch, StudioAction, StudioChapter, StudioNovel, StudioScene
+from ainovel.core.studio_state import (
+    apply_patch,
+    edit_self,
+    emit,
+    fork,
+    present,
+    require_editable,
+    reset,
+    role_context,
+    role_states,
+)
+from ainovel.core.studio_tools import Edit, tools_for
+from ainovel.service.studio import StudioRunner, build_request, edit_fields, estimate, gm_context
+
+
+def test_creation_request_has_only_creation_tool_descriptions_and_parameters():
+    from ainovel.core.studio_tools import StudioDecoder
+    from ainovel.llm.errors import StructuredOutputError
+    from ainovel.llm.schemas import ProviderMessage
+
+    n = StudioNovel()
+    request = build_request(
+        Settings(_env_file=None),
+        n,
+        "creation",
+        {"title": n.title, "world": [], "characters": [], "creation": []},
+    )
+    wire = request.body.model_dump_json()
+    for stage_term in ("群聊", "入场", "在场", "GM", "演绎", "章节"):
+        assert stage_term not in wire
+    assert set(tools_for("creation")) == {"say_to_user", "edit_fields", "create_character"}
+    with pytest.raises(ValidationError):
+        tools_for("creation")["edit_fields"](scope="scenes", operations=[{"op": "remove", "path": "/0"}])
+    with pytest.raises(StructuredOutputError):
+        StudioDecoder("creation").decode(
+            ProviderMessage(
+                role="assistant",
+                tool_calls=[
+                    {
+                        "id": "call_1",
+                        "function": {"name": "enter_character", "arguments": '{"character":"甲"}'},
+                    }
+                ],
+            )
+        )
+
+
+async def test_creation_tool_results_do_not_report_performance_state():
+    n = StudioNovel()
+    runner = StudioRunner(n, None, Settings(_env_file=None))
+    created = await runner.execute(
+        "creation", None, StudioAction(name="create_character", arguments={"name": "甲"})
+    )
+    edited = await runner.execute(
+        "creation",
+        None,
+        StudioAction(
+            name="edit_fields",
+            arguments={
+                "scope": "creation",
+                "operations": [{"op": "add", "path": "/-", "value": {"name": "文风", "type": "creation"}}],
+            },
+        ),
+    )
+    assert created.message == "人物资料已创建" and edited.message == "构思资料已更新"
+    assert n.characters[0].name == "甲" and n.creation[0].name == "文风"
+    gm_n, scene, _, _ = fixture()
+    gm = await StudioRunner(gm_n, None, Settings(_env_file=None)).execute(
+        "gm", scene, StudioAction(name="create_character", arguments={"name": "丙"})
+    )
+    assert "尚未入场" in gm.message
+
+
+def fixture():
+    a = Entity(
+        name="甲",
+        description=[
+            Description(name="公开经历", value=["知道灯塔"]),
+            Description(name="私密", value=["甲的秘密"], visibility=1),
+            Description(name="系统", value=["绝不能泄露"], visibility=0),
+        ],
+        special_attributes=[Attribute(key="情绪", value_type="str", current_value="平静", visibility=1)],
+    )
+    b = Entity(name="乙", description=[Description(name="私密", value=["乙的秘密"], visibility=1)])
+    chapter = StudioChapter(entity=Entity(name="第一章", type="chapter"))
+    scene = StudioScene(entity=Entity(name="灯塔", type="scene"), chapter_id=chapter.entity.id)
+    n = StudioNovel(created=True, characters=[a, b], chapters=[chapter], scenes=[scene])
+    return n, scene, a, b
+
+
+def test_description_and_attribute_visibility_and_types():
+    n, s, a, b = fixture()
+    assert [d.name for d in visible_entity(a, own=True).description] == ["公开经历", "私密"]
+    assert [d.name for d in visible_entity(a, own=False).description] == ["公开经历"]
+    assert Description(name="背景").visibility == Visibility.PUBLIC
+    for value_type, current in [("int", True), ("float", True), ("bool", 1), ("list", "不是列表")]:
+        with pytest.raises(ValidationError):
+            Attribute(key="变量", value_type=value_type, current_value=current)
+    with pytest.raises(ValidationError):
+        Entity(name="重复", description=[Description(name="a"), Description(name="a")])
+
+
+def test_visibility_tracks_entry_exit_intervals_and_no_other_novel_data():
+    n, s, a, b = fixture()
+    n.world = [Entity(name="幕后世界秘密")]
+    emit(s, "gm", "加入前的信息")
+    emit(s, "enter", "甲到场", a.id)
+    emit(s, "enter", "乙到场", b.id)
+    emit(s, "gm", "一起看到的灯光")
+    emit(s, "leave", "甲离开", a.id)
+    emit(s, "gm", "甲不该知道的交易")
+    emit(s, "enter", "甲返回", a.id)
+    emit(s, "gm", "甲返回后的消息")
+    data = role_context(n, s, a.id)
+    text = json.dumps(data, ensure_ascii=False)
+    for secret in ("加入前的信息", "甲不该知道的交易", "乙的秘密", "绝不能泄露", "幕后世界秘密"):
+        assert secret not in text
+    assert "甲的秘密" in text and "一起看到的灯光" in text and "甲返回后的消息" in text
+    assert present(s) == [b.id, a.id]
+    emit(s, "leave", "甲再离开", a.id)
+    with pytest.raises(ValueError, match="不在场"):
+        role_context(n, s, a.id)
+
+
+def test_snapshot_replay_and_branch_preserve_original_route():
+    n, s, a, b = fixture()
+    s.character_patches[a.id] = [
+        Patch(op="replace", path="/special_attributes/0/current_value", value="紧张")
+    ]
+    s.confirmed = True
+    s.character_snapshot = role_states(n, s)
+    later = StudioScene(entity=Entity(name="第二幕", type="scene"), chapter_id=s.chapter_id)
+    n.scenes.append(later)
+    later.character_patches[a.id] = [
+        Patch(op="replace", path="/special_attributes/0/current_value", value="安心")
+    ]
+    assert role_states(n, later)[a.id].special_attributes[0].current_value == "安心"
+    assert role_states(n, s)[a.id].special_attributes[0].current_value == "紧张"
+    with pytest.raises(ValueError, match="冻结"):
+        require_editable(n, s)
+    branched = fork(n, s.entity.id)
+    assert len(n.scenes) == 1 and not branched.confirmed
+    assert len(n.branches[0].scenes) == 2
+    assert n.branches[0].scenes[0].character_snapshot[a.id].special_attributes[0].current_value == "紧张"
+    assert role_states(n, branched)[a.id].special_attributes[0].current_value == "平静"
+
+
+def test_reset_preserves_settings_and_clears_only_rehearsal():
+    n, s, a, b = fixture()
+    edit_fields(
+        n,
+        s,
+        Edit(
+            scope="characters",
+            target="甲",
+            operations=[Patch(op="replace", path="/special_attributes/0/current_value", value="警惕")],
+        ),
+    )
+    emit(s, "enter", "甲到场", a.id)
+    edit_self(n, s, a.id, [Patch(op="replace", path="/special_attributes/0/current_value", value="生气")])
+    n.world.append(Entity(name="调整后的世界观"))
+    assert role_states(n, s)[a.id].special_attributes[0].current_value == "生气"
+    reset(s)
+    assert present(s) == [] and s.character_patches == {} and len(s.abandoned) == 1
+    assert n.world[0].name == "调整后的世界观"
+    assert role_states(n, s)[a.id].special_attributes[0].current_value == "警惕"
+    emit(s, "enter", "重新到场", a.id)
+    assert "生气" not in json.dumps(role_context(n, s, a.id), ensure_ascii=False)
+
+
+def test_self_patch_preserves_hidden_fields_and_cannot_promote_to_system():
+    n, s, a, b = fixture()
+    edit_self(n, s, a.id, [Patch(op="replace", path="/description/0/value", value=["新的公开经历"])])
+    after = role_states(n, s)[a.id]
+    assert next(d for d in after.description if d.visibility == 0).value == ["绝不能泄露"]
+    with pytest.raises(ValueError):
+        edit_self(n, s, a.id, [Patch(op="replace", path="/name", value="乙")])
+    with pytest.raises(ValueError):
+        edit_self(n, s, a.id, [Patch(op="replace", path="/description/0/visibility", value=0)])
+    assert b.description[0].value == ["乙的秘密"]
+
+
+def test_patch_atomicity_and_pointer_escaping():
+    doc = {"a/b": {"~key": [1, 2]}}
+    assert apply_patch(doc, [Patch(op="add", path="/a~1b/~0key/1", value=3)]) == {"a/b": {"~key": [1, 3, 2]}}
+    with pytest.raises(ValueError):
+        apply_patch(
+            doc, [Patch(op="remove", path="/a~1b/~0key/0"), Patch(op="replace", path="/missing", value=1)]
+        )
+    assert doc == {"a/b": {"~key": [1, 2]}}
+    for path in ("/a~1b/~0key/-1", "/a~1b/~0key/01", "/a~9b"):
+        with pytest.raises(ValueError):
+            apply_patch(doc, [Patch(op="remove", path=path)])
+
+
+async def test_gm_sends_user_messages_without_yielding_and_roles_return_to_gm():
+    n, s, a, b = fixture()
+    n.run_id = str(uuid4())
+    n.busy = True
+    emit(s, "enter", "甲到场", a.id)
+    emit(s, "enter", "乙到场", b.id)
+    seen = []
+    gm = [
+        StudioAction(name="say_to_user", arguments={"text": "我会先观察角色如何决定。"}),
+        StudioAction(
+            name="schedule_characters",
+            arguments={"characters": [a.id, b.id], "direction": "各自决定是否接近灯塔"},
+        ),
+        StudioAction(name="say_to_group", arguments={"text": "两人的尝试让灯塔守卫注意到了他们。"}),
+        StudioAction(name="reply", text="请检查演绎"),
+    ]
+
+    async def actor(mode, data, history, request):
+        seen.append((mode, data))
+        if mode == "gm":
+            return gm.pop(0)
+        return StudioAction(name="reply", text=data["self"]["name"] + "决定等待")
+
+    async def save(novel):
+        pass
+
+    await StudioRunner(n, SimpleNamespace(save=save), Settings(_env_file=None), actor=actor).run("gm", s)
+    assert [mode for mode, _ in seen] == ["gm", "gm", "role", "role", "gm", "gm"]
+    assert s.messages[0].content == "我会先观察角色如何决定。"
+    assert s.messages[-1].content == "请检查演绎"
+    assert not n.busy
+    for mode, data in seen:
+        if mode == "role":
+            assert "我会先观察" not in json.dumps(data, ensure_ascii=False)
+    assert [e.kind for e in s.events[-3:]] == ["role", "role", "gm"]
+
+
+async def test_budget_includes_nested_roles_and_preserves_progress():
+    n, s, a, b = fixture()
+    n.run_id = str(uuid4())
+    n.compression.max_calls = 2
+    emit(s, "enter", "甲到场", a.id)
+
+    async def actor(mode, data, history, request):
+        return (
+            StudioAction(name="schedule_characters", arguments={"characters": [a.id]})
+            if mode == "gm"
+            else StudioAction(name="reply", text="甲决定等待")
+        )
+
+    async def save(n):
+        pass
+
+    await StudioRunner(n, SimpleNamespace(save=save), Settings(_env_file=None), actor=actor).run("gm", s)
+    assert n.calls == 2 and not n.busy
+    assert "预算" in s.messages[-1].content
+    assert s.events[-1].text == "甲决定等待"
+
+
+def test_schemas_are_small_and_context_jinja_cannot_access_hidden_fields():
+    assert len(tools_for("gm")) == 8 and set(tools_for("role")) == {"edit_self", "leave"}
+    assert "id" not in tools_for("gm")["create_character"].model_json_schema()["properties"]
+    n, s, a, b = fixture()
+    emit(s, "enter", "甲到场", a.id)
+    request = build_request(Settings(_env_file=None), n, "role", role_context(n, s, a.id))
+    wire = request.body.model_dump_json()
+    assert "绝不能泄露" not in wire
+    assert estimate(request)["input_tokens"] > 0
+    writing = build_request(Settings(_env_file=None), n, "writing", {"events": []})
+    assert writing.body.tools is None and writing.body.tool_choice is None
+
+
+async def test_estimate_does_not_save_edits_and_invalid_jinja_is_readable(client):
+    n = (await client.post("/api/studio/novels", json={})).json()
+    key = n["id"]
+    candidate = {
+        "scene_id": "",
+        "compression": n["compression"],
+        "prompts": {},
+        "context_source": "{{ data.title }}",
+        "message": "新要求",
+    }
+    preview = await client.post(f"/api/studio/novels/{key}/estimate", json=candidate)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["messages"][-1]["content"] == "新要求"
+    after = (await client.get("/api/studio/novels/" + key)).json()
+    assert after["version"] == n["version"] and after["context_source"] == n["context_source"]
+    candidate["context_source"] = "{{ invalid_variable }}"
+    invalid = await client.post(f"/api/studio/novels/{key}/estimate", json=candidate)
+    assert invalid.status_code == 400 and "Jinja" in invalid.json()["detail"]
+
+
+async def test_api_rejects_user_messages_and_edits_during_gm_execution(client, monkeypatch):
+    import asyncio
+
+    started, resume = asyncio.Event(), asyncio.Event()
+
+    async def paused_call(self, mode, data, history):
+        started.set()
+        await resume.wait()
+        return StudioAction(name="reply", text="完成")
+
+    monkeypatch.setattr(StudioRunner, "call", paused_call)
+    n = (await client.post("/api/studio/novels", json={})).json()
+    path = f"/api/studio/novels/{n['id']}"
+    task = asyncio.create_task(
+        client.post(path + "/message", json={"version": n["version"], "message": "开始"})
+    )
+    try:
+        await asyncio.wait_for(started.wait(), 3)
+        current = (await client.get(path)).json()
+        assert current["busy"]
+        blocked = await client.post(
+            path + "/message", json={"version": current["version"], "message": "不应插入"}
+        )
+        assert blocked.status_code == 409
+        blocked_edit = await client.post(
+            path + "/edit", json={"version": current["version"], "scope": "world", "title": "不应修改"}
+        )
+        assert blocked_edit.status_code == 409
+    finally:
+        resume.set()
+        await asyncio.wait_for(task, 3)
+
+
+def test_chapter_compression_falls_back_without_truncating():
+    n, s, a, b = fixture()
+    emit(s, "gm", "很长的消息" * 2000)
+    s.confirmed = True
+    second = StudioChapter(entity=Entity(name="第二章", type="chapter"))
+    current = StudioScene(entity=Entity(name="新幕", type="scene"), chapter_id=second.entity.id)
+    n.chapters.append(second)
+    n.scenes.append(current)
+    n.compression.full_chapters = 0
+    n.compression.scene_chapters = 0
+    assert gm_context(n, current)["chapters"][0]["content"][0]["events"][0]["text"] == "很长的消息" * 2000
+    n.chapters[0].summary = "灯塔事件"
+    n.chapters[0].summary_stale = False
+    assert gm_context(n, current)["chapters"][0]["content"] == "灯塔事件"
+
+
+@pytest.fixture
+async def client(tmp_path):
+    app = create_app(
+        Settings(
+            _env_file=None,
+            llm_provider="mock",
+            database_url="sqlite+aiosqlite:///" + str(tmp_path / "studio.db"),
+        )
+    )
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client,
+    ):
+        yield client
+
+
+async def test_api_gm_answers_user_question_without_tool_calls_and_keeps_it_after_reload(client, monkeypatch):
+    n = (await client.post("/api/studio/novels", json={})).json()
+    path = f"/api/studio/novels/{n['id']}"
+    await client.post(path + "/message", json={"version": n["version"], "message": "构思一个灯塔故事"})
+    n = (await client.get(path)).json()
+    await client.post(path + "/control", json={"version": n["version"], "action": "confirm_creation"})
+    n = (await client.get(path)).json()
+    await client.post(path + "/control", json={"version": n["version"], "action": "new_scene"})
+    n = (await client.get(path)).json()
+    scene_id = n["scenes"][-1]["entity"]["id"]
+    before_calls = n["calls"]
+    original = StudioRunner.mock
+
+    def mock(self, mode, data, history):
+        if mode == "gm":
+            return StudioAction(name="reply", text="可以把冲突设为信任问题，先讨论动机，不必立即演绎。")
+        return original(self, mode, data, history)
+
+    monkeypatch.setattr(StudioRunner, "mock", mock)
+    r = await client.post(
+        path + "/message",
+        json={"version": n["version"], "scene_id": scene_id, "message": "这幕的冲突可以怎么安排？"},
+    )
+    assert r.status_code == 200, r.text
+    after = (await client.get(path)).json()
+    messages = after["scenes"][-1]["messages"]
+    assert [m["role"] for m in messages] == ["user", "assistant"]
+    assert messages[-1]["content"] == "可以把冲突设为信任问题，先讨论动机，不必立即演绎。"
+    assert after["calls"] == before_calls + 1 and not after["busy"] and not after["error"]
+    assert after["scenes"][-1]["events"] == []
+    assert after["turn_checkpoint"]["version"] == after["version"]
+    again = (await client.get(path)).json()
+    assert again["scenes"][-1]["messages"] == messages
+
+
+async def test_api_progressive_creation_performance_prose_branch_and_purge(client):
+    n = (await client.post("/api/studio/novels", json={})).json()
+    key = n["id"]
+
+    async def get():
+        return (await client.get("/api/studio/novels/" + key)).json()
+
+    async def control(action, **extra):
+        n = await get()
+        response = await client.post(
+            f"/api/studio/novels/{key}/control", json={"version": n["version"], "action": action, **extra}
+        )
+        assert response.status_code == 200, response.text
+        return await get()
+
+    response = await client.post(
+        f"/api/studio/novels/{key}/message", json={"version": n["version"], "message": "海上的灯塔都市"}
+    )
+    assert response.status_code == 200, response.text
+    n = await get()
+    assert n["world"][0]["description"][0]["value"] == ["海上的灯塔都市"] and not n["created"]
+    response = await client.post(
+        f"/api/studio/novels/{key}/edit",
+        json={
+            "version": n["version"],
+            "scope": "characters",
+            "entity": {
+                "name": "甲",
+                "description": [{"name": "秘密", "value": ["隐藏动机"], "visibility": 1}],
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    n = await control("confirm_creation")
+    n = await control("new_scene")
+    scene_id = n["scenes"][0]["entity"]["id"]
+    n = await control("enter", scene_id=scene_id, name="甲")
+    response = await client.post(
+        f"/api/studio/novels/{key}/message",
+        json={"version": n["version"], "scene_id": scene_id, "message": "让甲自己决定是否进入灯塔"},
+    )
+    assert response.status_code == 200, response.text
+    n = await get()
+    assert any(e["kind"] == "role" for e in n["scenes"][0]["events"])
+    n = await control("confirm_scene", scene_id=scene_id)
+    n = await control("write", scene_id=scene_id)
+    assert n["scenes"][0]["text"]
+    n = await control("finish_chapter", scene_id=scene_id)
+    assert n["chapters"][0]["summary"] and not n["chapters"][0]["summary_stale"]
+    n = await control("new_scene", new_chapter=True)
+    locked = await client.post(
+        f"/api/studio/novels/{key}/message",
+        json={"version": n["version"], "scene_id": scene_id, "message": "修改旧幕"},
+    )
+    assert locked.status_code == 400 and "冻结" in locked.text
+    n = await control("branch", scene_id=scene_id)
+    assert len(n["scenes"]) == 1 and len(n["branches"][0]["scenes"]) == 2
+    assert not n["scenes"][0]["confirmed"] and n["scenes"][0]["text"] == ""
+    stale = await client.post(f"/api/studio/novels/{key}/control", json={"version": 0, "action": "delete"})
+    assert stale.status_code == 409
+    n = await control("delete")
+    assert (
+        await client.delete(f"/api/studio/novels/{key}", params={"version": n["version"]})
+    ).status_code == 200
+    assert (await client.get("/api/studio/novels")).json() == []
+
+
+async def test_creation_requires_conversation_before_confirming(client):
+    novel = (await client.post("/api/studio/novels", json={})).json()
+    path = "/api/studio/novels/" + novel["id"]
+    blocked = await client.post(
+        path + "/control", json={"version": novel["version"], "action": "confirm_creation"}
+    )
+    assert blocked.status_code == 400 and "AI" in blocked.json()["detail"]
+    assert not (await client.get(path)).json()["created"]
+
+
+async def test_templates_initialize_independent_novel_fields_and_export_as_new(client):
+    from ainovel.core.studio_templates import TemplateFields
+
+    fields = TemplateFields().model_dump(mode="json")
+    fields["world"]["description"] = [{"name": "世界规则", "value": ["模板初始世界"], "visibility": 2}]
+    fields["characters"]["description"] = [{"name": "动机", "value": ["模板动机"], "visibility": 1}]
+    fields["chapters"]["description"] = [{"name": "章节目标", "value": [], "visibility": 2}]
+    fields["scenes"]["special_attributes"] = [
+        {
+            "key": "气氛",
+            "value_type": "str",
+            "current_value": "安静",
+            "why": "场景气氛",
+            "how": "轻声交谈",
+            "when": "事件发生",
+            "visibility": 2,
+        }
+    ]
+    response = await client.post("/api/studio/templates", json={"name": "人物驱动", "fields": fields})
+    assert response.status_code == 200, response.text
+    template = response.json()
+    novel = (await client.post("/api/studio/novels", json={})).json()
+    path = "/api/studio/novels/" + novel["id"]
+    applied = await client.post(
+        path + "/template", json={"version": novel["version"], "template_id": template["id"]}
+    )
+    assert applied.status_code == 200, applied.text
+    novel = applied.json()
+    assert novel["world"][0]["description"][0]["value"] == ["模板初始世界"]
+    assert not novel["created"]
+    world = novel["world"][0]
+    world["description"][0]["value"] = ["本书自己的世界"]
+    response = await client.post(
+        path + "/edit",
+        json={
+            "version": novel["version"],
+            "scope": "world",
+            "target": world["id"],
+            "entity": {k: v for k, v in world.items() if k != "id"},
+        },
+    )
+    assert response.status_code == 200, response.text
+    novel = response.json()
+    character = await client.post(
+        path + "/edit", json={"version": novel["version"], "scope": "characters", "entity": {"name": "甲"}}
+    )
+    assert character.status_code == 200, character.text
+    novel = character.json()
+    assert novel["characters"][0]["description"][0]["visibility"] == 1
+    assert novel["characters"][0]["description"][0]["value"] == ["模板动机"]
+    exported = await client.post(
+        path + "/template/export", json={"version": novel["version"], "name": "本书新模板"}
+    )
+    assert exported.status_code == 200, exported.text
+    assert exported.json()["id"] != template["id"]
+    assert exported.json()["fields"]["world"]["description"][0]["value"] == ["本书自己的世界"]
+    library = (await client.get("/api/studio/templates")).json()
+    assert next(t for t in library if t["id"] == template["id"])["fields"]["world"]["description"][0][
+        "value"
+    ] == ["模板初始世界"]
+    fields["world"]["description"][0]["value"] = ["修改后的全局模板"]
+    updated = await client.post(
+        "/api/studio/templates",
+        json={
+            "id": template["id"],
+            "version": template["version"],
+            "name": "直接编辑后的模板",
+            "fields": fields,
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert (await client.get(path)).json()["world"][0]["description"][0]["value"] == ["本书自己的世界"]
+    stale = await client.post(
+        "/api/studio/templates",
+        json={"id": template["id"], "version": template["version"], "name": "过期保存", "fields": fields},
+    )
+    assert stale.status_code == 409
+    await client.post(
+        path + "/message",
+        json={"version": novel["version"], "message": "这本小说已经有世界和角色，请继续整理"},
+    )
+    novel = (await client.get(path)).json()
+    response = await client.post(
+        path + "/control", json={"version": novel["version"], "action": "confirm_creation"}
+    )
+    assert response.status_code == 200, response.text
+    novel = (await client.get(path)).json()
+    response = await client.post(path + "/control", json={"version": novel["version"], "action": "new_scene"})
+    assert response.status_code == 200, response.text
+    novel = response.json()
+    assert novel["chapters"][0]["entity"]["description"][0]["name"] == "章节目标"
+    assert novel["scenes"][0]["entity"]["special_attributes"][0]["current_value"] == "安静"
+    locked = await client.post(
+        path + "/template", json={"version": novel["version"], "template_id": template["id"]}
+    )
+    assert locked.status_code == 400
+    removed = await client.delete(
+        "/api/studio/templates/" + template["id"], params={"version": updated.json()["version"]}
+    )
+    assert removed.status_code == 200
+    assert (await client.get(path)).json()["field_template_name"] == "人物驱动"
+
+
+async def test_export_does_not_restore_template_fields_deleted_from_novel(client):
+    from ainovel.core.studio_templates import TemplateFields
+
+    fields = TemplateFields().model_dump(mode="json")
+    fields["world"]["description"] = [{"name": "后来删除的字段", "value": [], "visibility": 2}]
+    template = (
+        await client.post("/api/studio/templates", json={"name": "初始化模板", "fields": fields})
+    ).json()
+    novel = (await client.post("/api/studio/novels", json={})).json()
+    path = "/api/studio/novels/" + novel["id"]
+    novel = (
+        await client.post(
+            path + "/template", json={"version": novel["version"], "template_id": template["id"]}
+        )
+    ).json()
+    novel = (
+        await client.post(
+            path + "/edit",
+            json={
+                "version": novel["version"],
+                "scope": "world",
+                "target": novel["world"][0]["id"],
+                "delete": True,
+            },
+        )
+    ).json()
+    assert novel["world"] == []
+    exported = await client.post(
+        path + "/template/export", json={"version": novel["version"], "name": "删除后的模板"}
+    )
+    assert exported.status_code == 200, exported.text
+    assert exported.json()["fields"]["world"]["description"] == []
+
+
+async def test_archived_route_preview_reads_its_own_character_state_without_writing(client):
+    n = (await client.post("/api/studio/novels", json={})).json()
+    path = "/api/studio/novels/" + n["id"]
+    await client.post(path + "/message", json={"version": n["version"], "message": "讨论灯塔故事"})
+    n = (await client.get(path)).json()
+    role = {
+        "name": "甲",
+        "special_attributes": [{"key": "情绪", "value_type": "str", "current_value": "平静"}],
+    }
+    n = (
+        await client.post(
+            path + "/edit", json={"version": n["version"], "scope": "characters", "entity": role}
+        )
+    ).json()
+    role_id = n["characters"][0]["id"]
+
+    async def control(action, **args):
+        current = (await client.get(path)).json()
+        result = await client.post(
+            path + "/control", json={"version": current["version"], "action": action, **args}
+        )
+        assert result.status_code == 200, result.text
+        return result.json()
+
+    await control("confirm_creation")
+    n = await control("new_scene")
+    first = n["scenes"][0]["entity"]["id"]
+    await control("confirm_scene", scene_id=first)
+    n = await control("new_scene")
+    second = n["scenes"][-1]["entity"]["id"]
+    role["special_attributes"][0]["current_value"] = "警惕"
+    edited = await client.post(
+        path + "/edit",
+        json={"version": n["version"], "scope": "characters", "target": role_id, "entity": role},
+    )
+    assert edited.status_code == 200, edited.text
+    n = await control("branch", scene_id=first)
+    archived = n["branches"][0]["id"]
+    preview = await client.get(path + "/preview", params={"branch_id": archived, "scene_id": second})
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["characters"][role_id]["special_attributes"][0]["current_value"] == "警惕"
+    active = await client.get(path + "/preview", params={"scene_id": first})
+    assert active.json()["characters"][role_id]["special_attributes"][0]["current_value"] == "平静"
+    assert (await client.get(path)).json()["version"] == n["version"]

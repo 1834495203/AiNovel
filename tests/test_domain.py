@@ -1,6 +1,8 @@
+
 from uuid import uuid4
 
 import pytest
+from configured_fields import make_world, story_from_proposal
 from pydantic import ValidationError
 
 from ainovel.core.characters import Character, Snapshot
@@ -8,12 +10,11 @@ from ainovel.core.domain import (
     Chapter,
     CommandSubmission,
     CreateStoryRequest,
+    CreationProposal,
     Direction,
     GenerateRequest,
     JudgeResult,
     Scene,
-    Story,
-    StorySetup,
 )
 from ainovel.utils.chunking import ParagraphChunker
 
@@ -33,7 +34,7 @@ def test_submission_requires_explicit_revision_and_confirmation() -> None:
     with pytest.raises(ValidationError):
         CommandSubmission(payload=GenerateRequest(instruction="继续"))
     with pytest.raises(ValidationError):
-        CreateStoryRequest(setup=StorySetup(title="小说", world="城市"), confirmed=False)
+        CreateStoryRequest(proposal=CreationProposal(title="小说", world=make_world('城市')), confirmed=False)
     with pytest.raises(ValidationError):
         Direction(instruction="这里少一点雨", scope="chapter")
 
@@ -57,8 +58,8 @@ def test_historical_snapshot_does_not_see_future_character() -> None:
     first = Scene(chapter_id=chapter.id, title="一", text="过去", summary="过去")
     second = Scene(chapter_id=chapter.id, title="二", text="后来", summary="后来")
     npc = Character(name="后来的人", introduced_scene_id=second.id)
-    story = Story(
-        setup=StorySetup(title="小说", world="城市"),
+    story = story_from_proposal(
+        proposal=CreationProposal(title="小说", world=make_world('城市')),
         chapters=[chapter],
         scenes=[first, second],
         characters=[npc],

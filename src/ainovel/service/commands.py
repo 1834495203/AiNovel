@@ -1,14 +1,12 @@
 """Command handlers: orchestration and domain writes live here, never in HTTP routes."""
 
 from abc import ABC, abstractmethod
-from contextlib import aclosing
 from typing import Generic, TypeVar
 from uuid import UUID
 
 from ainovel.core.characters import (
     Character,
     CharacterPatch,
-    CharacterSpec,
     Experience,
     Profile,
     Snapshot,
@@ -18,7 +16,6 @@ from ainovel.core.config import Settings
 from ainovel.core.discussion import DiscussionResult
 from ainovel.core.domain import (
     AcceptRewriteRequest,
-    ApprovalResponse,
     Chapter,
     CharacterChatRequest,
     ChatResult,
@@ -27,7 +24,6 @@ from ainovel.core.domain import (
     CreateStoryRequest,
     DeleteStoryRequest,
     DirectionRequest,
-    Draft,
     Event,
     Extraction,
     GenerateRequest,
@@ -50,13 +46,12 @@ from ainovel.core.domain import (
     Turn,
     UndoRequest,
     UpdateStoryRequest,
-    WorkflowState,
     WritingDraft,
+    WritingState,
 )
 from ainovel.core.errors import ConflictError
 from ainovel.core.ports import KnowledgeGraph, LanguageModel
-from ainovel.core.records import WorkingDraft, WorldSetting
-from ainovel.llm.schemas import TextResult
+from ainovel.core.records import WorldSetting
 from ainovel.mapper.models import CommandRow, EventRow
 from ainovel.mapper.store import Store
 from ainovel.service.creation import CreationProgress
@@ -66,7 +61,7 @@ from ainovel.service.prompt_templates import (
     resolve_run_templates,
 )
 from ainovel.service.retrieval import RetrievalService
-from ainovel.service.workflow import NarrativeWorkflow
+from ainovel.service.writing_agent import WritingAgent
 
 R = TypeVar("R", bound=Model)
 
@@ -104,7 +99,7 @@ class Services:
         self.retrieval = retrieval
         self.graph = graph
         self.settings = settings
-        self.workflow = NarrativeWorkflow(model, retrieval, store, settings)
+        self.writing_agent = WritingAgent(model, retrieval, store, settings)
 
     async def source(self, submission: CommandSubmission) -> Story:
         if submission.base_revision_id is None:
@@ -125,7 +120,7 @@ class Services:
         writing_draft: WritingDraft | None = None,
         discussion: "DiscussionResult | None" = None,
     ) -> CommandOutput:
-        from ainovel.service.workflow_trace import IndexInput
+
 
         story = Story.model_validate(story.model_dump(round_trip=True))
 
@@ -136,9 +131,7 @@ class Services:
                 trace=Trace(
                     node="index",
                     summary="建立版本检索索引并提交故事",
-                    structured_input=IndexInput(
-                        title=story.title, chapters=story.chapters, scenes=story.scenes
-                    ).model_dump_json(),
+                    structured_input=story.model_dump_json(round_trip=True,include={"title","chapters","scenes"}),
                 ),
             )
         )
@@ -157,7 +150,7 @@ class Services:
         )
 
     @staticmethod
-    def apply_scene(state: WorkflowState) -> Story:
+    def apply_scene(state: WritingState) -> Story:
         from ainovel.core.domain import Scene
 
         if state.draft is None or state.extraction is None or state.plan is None:
@@ -176,7 +169,9 @@ class Services:
         )
         if not story.chapters or state.new_chapter:
             story.chapters.append(chapter)
-            chapter.custom_fields = initial_fields(story, FieldTarget(scope="chapter", entity_id=chapter.id), chapter.custom_fields)
+            chapter.custom_fields = initial_fields(
+                story, FieldTarget(scope="chapter", entity_id=chapter.id), chapter.custom_fields
+            )
         patches = [
             CharacterPatch(
                 character_id=update.character_id,
@@ -201,25 +196,22 @@ class Services:
                 source_command_id=state.execution_id,
             )
         )
-        story.scenes[-1].custom_fields = initial_fields(story, FieldTarget(scope="scene", entity_id=state.scene_id), story.scenes[-1].custom_fields)
+        story.scenes[-1].custom_fields = initial_fields(
+            story, FieldTarget(scope="scene", entity_id=state.scene_id), story.scenes[-1].custom_fields
+        )
         chapter.summary = "\n".join(scene.summary for scene in story.scenes if scene.chapter_id == chapter.id)
         story.writer = state.plan.writer_patch.apply(story.writer)
-        drafts = story.writer.drafts
-        drafts.append(
-            WorkingDraft(
-                id=state.scene_id,
-                name=state.draft.title,
-                kind="scene",
-                content=state.draft.text,
-                status="used",
-                source_scene_id=state.scene_id,
-                reason="通过审查并提交的正文草稿",
+        for change in state.proposed_material_changes:
+            from ainovel.core.records import merge_records
+            from ainovel.core.story_fields import read_fields
+            from ainovel.service.fields import write_fields
+
+            write_fields(
+                story,
+                change.target,
+                merge_records(read_fields(story, change.target), change.patch),
+                change.reason,
             )
-        )
-        # Keep the latest working copies; older copies remain in prior immutable revisions.
-        story.writer.drafts = drafts[-12:]
-        if state.maintenance:
-            story.apply_metadata(state.maintenance.patch)
         for direction in story.directions:
             if direction.scope == "scene" and direction.scene_id is None and direction.active:
                 direction.scene_id = state.scene_id
@@ -248,16 +240,32 @@ class InterviewHandler(Handler[InterviewRequest]):
     request_type = InterviewRequest
 
     async def execute(self, submission: CommandSubmission, request: InterviewRequest) -> CommandOutput:
-        result = await self.services.model.generate(
-            InterviewResult,
-            "creation_interview",
-            request,
-            submission.id,
-            prompt_template=await resolve_command_template(
-                self.services.store, submission.id, None, "creation_interview"
-            ),
+        from ainovel.core.agent import SubmitCreationAction
+        from ainovel.core.discussion import DiscussionTurn
+        from ainovel.service.agent_loop import context_for, run_agent
+
+        template = await resolve_command_template(
+            self.services.store, submission.id, None, "creation_interview"
         )
-        return CommandOutput(interview=CreationProgress().enrich(result))
+        history = [DiscussionTurn(role=turn.role, content=turn.content) for turn in request.turns[:-1]]
+        goal = request.turns[-1].content if request.turns else "请开始了解我的小说构思"
+        story = Story(title="新小说")
+
+        def build(results):
+            return context_for(
+                story, submission.id, "creation_interview", goal, history=history, results=results
+            )
+
+        async def execute(action):
+            raise ValueError("创建访谈只能通过提案工具提交初始资料")
+
+        result = await run_agent(self.services, submission.id, "creation_interview", template, build, execute)
+        interview = (
+            result.arguments
+            if isinstance(result, SubmitCreationAction)
+            else InterviewResult(reply=result.reply)
+        )
+        return CommandOutput(interview=CreationProgress().enrich(interview))
 
 
 class SaveSetupDraftHandler(Handler[SaveSetupDraftRequest]):
@@ -272,7 +280,9 @@ class SaveSetupDraftHandler(Handler[SaveSetupDraftRequest]):
 class SetSetupDraftDeletedHandler(Handler[SetSetupDraftDeletedRequest]):
     request_type = SetSetupDraftDeletedRequest
 
-    async def execute(self, submission: CommandSubmission, request: SetSetupDraftDeletedRequest) -> CommandOutput:
+    async def execute(
+        self, submission: CommandSubmission, request: SetSetupDraftDeletedRequest
+    ) -> CommandOutput:
         from ainovel.mapper.drafts import DraftRepository
 
         return await DraftRepository(self.services.store).set_deleted(submission, request.deleted)
@@ -313,7 +323,9 @@ class CreateStoryHandler(Handler[CreateStoryRequest]):
             scopes = [item.scope for item in selected]
             if len(scopes) != len(set(scopes)):
                 raise ValueError("每类资料只能选择一个初始化模板")
-            template_set.templates = [item for item in template_set.templates if item.scope not in scopes] + selected
+            template_set.templates = [
+                item for item in template_set.templates if item.scope not in scopes
+            ] + selected
         initialize_story_schema(story, template_set)
         return await self.services.commit(submission, story, "确认设定，创建小说")
 
@@ -324,10 +336,24 @@ class GenerateHandler(Handler[GenerateRequest]):
     async def execute(self, submission: CommandSubmission, request: GenerateRequest) -> CommandOutput:
         state = await self.services.store.checkpoint(submission.id)
         if state is None:
-            state = WorkflowState(
+            from ainovel.core.domain import Intent
+            from ainovel.service.scene_planning import next_scene
+
+            story = await self.services.source(submission)
+            planned = next_scene(story)
+            if planned is None or request.planned_scene_id != planned.id:
+                raise ValueError("请先在设定模式创建幕，并选择当前路线的下一幕")
+            state = WritingState(
                 command_id=submission.id,
-                story=await self.services.source(submission),
-                instruction=request.instruction,
+                source_revision_id=submission.base_revision_id,
+                story=story,
+                instruction=request.instruction + "\n严格依据已保存的幕计划生成正文，不改写幕设定。",
+                planned_scene_id=planned.id,
+                scene_id=planned.id,
+                plan=planned.plan.model_copy(deep=True),
+                intent=Intent(goal=request.instruction, route="deliberate"),
+                new_chapter=not story.chapters or planned.plan.start_new_chapter,
+                text_only_revision=True,
             )
         if not state.prompt_templates:
             state.prompt_templates = await resolve_run_templates(
@@ -335,15 +361,7 @@ class GenerateHandler(Handler[GenerateRequest]):
             )
             # Pin resolved versions before the first model request so retries survive a crash.
             await self.services.store.save_checkpoint(state)
-        state = await self.services.workflow.run(state)
-        if state.approval_phase:
-            output = CommandOutput(
-                need=state.plan.new_character if state.plan else None,
-                approval_phase=state.approval_phase,
-                message="等待角色确认",
-            )
-            await self.services.store.finish(submission.id, output, "waiting")
-            return output
+        state = await self.services.writing_agent.run(state)
         if state.draft_status == "pending" and state.draft is not None:
             output = CommandOutput(
                 story_id=submission.story_id,
@@ -381,42 +399,24 @@ class RewriteHandler(Handler[RewriteRequest]):
             target_scenes = [scene for scene in story.scenes if scene.chapter_id == request.chapter_id]
             if not target_scenes:
                 raise ValueError("章节不存在或为空")
-            chapter_id = request.chapter_id
             source_text = "\n\n".join(scene.text for scene in target_scenes)
         else:
             scene = next(scene for scene in story.scenes if scene.id == request.scene_id)
-            chapter_id = scene.chapter_id
             source_text = scene.text
         if request.end <= request.start or request.end > len(source_text):
             raise ValueError("选择范围无效")
         original = source_text[request.start : request.end]
         if original != request.selected_text:
             raise ConflictError("选中文本与源版本不同")
-        directions = [
-            direction.instruction
-            for direction in story.directions
-            if direction.active
-            and (
-                direction.scope in ("global", "future")
-                or direction.chapter_id == chapter_id
-                or direction.scope == "scene"
-                and direction.scene_id == request.scene_id
-            )
-        ]
-        result = await self.services.model.generate(
-            TextResult,
-            "rewrite_snippet",
-            RewriteInput(
-                original=original,
-                scene=source_text,
-                instruction=request.instruction,
-                world=story.world,
-                directions=directions,
-            ),
-            submission.id,
-            prompt_template=await resolve_command_template(
-                self.services.store, submission.id, submission.story_id, "rewrite_snippet"
-            ),
+        result = await self.services.writing_agent.propose_rewrite(
+            self.services,
+            submission,
+            story,
+            source_text,
+            original,
+            request.instruction,
+            request.start,
+            request.end,
         )
         if submission.base_revision_id is None:
             raise ValueError("缺少源版本")
@@ -428,7 +428,10 @@ class RewriteHandler(Handler[RewriteRequest]):
                 start=request.start,
                 end=request.end,
                 original=original,
-                replacement=result.text,
+                replacement=result.draft.text,
+                summary=result.draft.summary,
+                updates=result.updates,
+                materials=result.materials,
             )
         )
 
@@ -488,41 +491,8 @@ class AcceptRewriteHandler(Handler[AcceptRewriteRequest]):
             if (direction.chapter_id is None or direction.chapter_id in active_chapters)
             and (direction.scene_id is None or direction.scene_id in kept_scenes)
         ]
-        prior = story.model_copy(deep=True)
-        prior.scenes = prior.scenes[:index]
-        from ainovel.core.domain import Plan
-
-        state = WorkflowState(
-            command_id=submission.id,
-            story=prior,
-            instruction="接受局部修改",
-            scene_id=scene.id,
-            draft=Draft(title=scene.title, text=scene.text, summary=""),
-            plan=Plan(chapter_plan="", scene_plan="", character_names=[]),
-            prompt_templates=await self.services.store.pin_prompt_templates(
-                submission.id, await resolve_run_templates(self.services.store, submission.story_id, [])
-            ),
-        )
-        summary = await self.services.model.generate(
-            TextResult,
-            "scene_summary",
-            RewriteInput(
-                original=scene.text,
-                scene=scene.text,
-                instruction="概括实际发生的事",
-                world=story.world,
-                directions=[],
-            ),
-            submission.id,
-            prompt_template=await resolve_command_template(
-                self.services.store, submission.id, submission.story_id, "scene_summary"
-            ),
-        )
-        scene.summary = summary.text
-        state.draft.summary = scene.summary
-        state = await self.services.workflow.extract(state)
-        if state.extraction is None:
-            raise ValueError("缺少状态提取")
+        scene.summary = proposal.summary
+        extraction = Extraction(updates=proposal.updates)
         scene.character_patches = [
             CharacterPatch(
                 character_id=update.character_id,
@@ -534,11 +504,19 @@ class AcceptRewriteHandler(Handler[AcceptRewriteRequest]):
                 new_experiences=update.new_experiences,
                 reason=update.reason,
             )
-            for update in state.extraction.updates
+            for update in extraction.updates
         ]
-        state = await self.services.workflow.maintain(state)
-        if state.maintenance:
-            story.apply_metadata(state.maintenance.patch)
+        from ainovel.core.records import merge_records
+        from ainovel.core.story_fields import read_fields
+        from ainovel.service.fields import write_fields
+
+        for change in proposal.materials:
+            write_fields(
+                story,
+                change.target,
+                merge_records(read_fields(story, change.target), change.patch),
+                change.reason,
+            )
         for chapter in story.chapters:
             chapter.summary = "\n".join(
                 item.summary for item in story.scenes if item.chapter_id == chapter.id
@@ -547,7 +525,7 @@ class AcceptRewriteHandler(Handler[AcceptRewriteRequest]):
             submission,
             story,
             "接受局部修改，从此处建立分支，后续场景保留在旧版本",
-            state.extraction,
+            extraction,
             proposed.submission.id,
         )
 
@@ -592,102 +570,7 @@ class ResolveCharacterHandler(Handler[ResolveCharacterRequest]):
     request_type = ResolveCharacterRequest
 
     async def execute(self, submission: CommandSubmission, request: ResolveCharacterRequest) -> CommandOutput:
-        store = self.services.store
-        async with aclosing(store.claim_lock(request.generation_command_id)) as locked:
-            async for _session in locked:
-                parent = await store.command(request.generation_command_id)
-                if parent.submission.story_id != submission.story_id or parent.status != "waiting":
-                    raise ValueError("生成命令不属于当前小说，或未等待确认")
-                if parent.submission.base_revision_id != submission.base_revision_id:
-                    raise ConflictError("审批的源版本不一致")
-                state = await store.checkpoint(request.generation_command_id)
-                if state is None or state.plan is None or state.plan.new_character is None:
-                    raise ValueError("缺少待批准角色")
-                if request.decision == "consent":
-                    if state.approval_phase != "consent":
-                        raise ValueError("该角色已进入档案确认阶段")
-                    character_template = next(
-                        (item for item in state.prompt_templates if item.task == "character_profile"), None
-                    )
-                    if character_template is None:
-                        character_template = await resolve_command_template(
-                            store, request.generation_command_id, submission.story_id, "character_profile"
-                        )
-                    character = await self.services.model.generate(
-                        CharacterSpec,
-                        "character_profile",
-                        state,
-                        submission.id,
-                        prompt_template=character_template,
-                    )
-                    state.approval_phase = "profile"
-                    output = CommandOutput(
-                        need=state.plan.new_character,
-                        character=character,
-                        approval_phase="profile",
-                        message="请检查并修改角色档案",
-                    )
-                    parent_status = "waiting"
-                else:
-                    if request.decision == "accept":
-                        if state.approval_phase != "profile" or request.character is None:
-                            raise ValueError("需要先同意引入角色，再确认档案")
-                        if any(
-                            character.name == request.character.name for character in state.story.characters
-                        ):
-                            raise ValueError("角色名称已存在")
-                        state.approved_character = request.character
-                    else:
-                        state.rejected_character = True
-                    state.approval_phase = None
-                    state.approval_response = ApprovalResponse(
-                        decision="accept" if request.decision == "accept" else "reject",
-                        character=request.character,
-                    )
-                    output = CommandOutput(message="已确认，将恢复同一 LangGraph 执行")
-                    parent_status = "queued"
-                # Parent transition and approval completion share a transaction (retry-safe).
-                async with store.sessions.begin() as session:
-                    if submission.story_id is None:
-                        raise ValueError("缺少小说")
-                    await store.record_operation(
-                        session, submission, related_ids=[request.generation_command_id]
-                    )
-                    await store.active_story(session, submission.story_id, locked=True)
-                    parent_row = await session.get(
-                        CommandRow, request.generation_command_id, with_for_update=True
-                    )
-                    resolve_row = await session.get(CommandRow, submission.id, with_for_update=True)
-                    if (
-                        parent_row is None
-                        or resolve_row is None
-                        or parent_row.status != "waiting"
-                        or resolve_row.status != "running"
-                    ):
-                        raise ValueError("命令不存在")
-                    parent_row.checkpoint = state
-                    parent_row.status = parent_status
-                    parent_row.output = output
-                    resolve_row.status = "completed"
-                    resolve_row.output = output
-                    session.add(
-                        EventRow(
-                            command_id=submission.id,
-                            payload=Event(command_id=submission.id, type="run.completed", output=output),
-                        )
-                    )
-                    session.add(
-                        EventRow(
-                            command_id=request.generation_command_id,
-                            payload=Event(
-                                command_id=request.generation_command_id,
-                                type="approval.updated",
-                                output=output,
-                            ),
-                        )
-                    )
-                return output
-        raise ConflictError("生成任务正在运行，请稍后审批")
+        raise ValueError("人物不再由正文流水线自动审批；请在幕设定阶段完成角色资料后再写正文")
 
 
 class RevertHandler(Handler[RevertRequest]):
@@ -720,29 +603,49 @@ class CharacterChatHandler(Handler[CharacterChatRequest]):
                         Turn(role="assistant", content=command.output.chat.reply),
                     ]
                 )
-        result = await self.services.model.generate(
-            ChatResult,
-            "character_chat",
-            ChatInput(
-                character_id=character.id,
-                name=character.name,
-                profile=snapshot.profile,
-                snapshot=SnapshotContext.from_snapshot(snapshot),
-                session_id=request.session_id,
-                message=request.message,
-                history=history,
-                memories=self.services.retrieval.character(
-                    snapshot, request.message, [character.name, *[alias.name for alias in snapshot.aliases]]
-                ),
-            ),
-            submission.id,
-            prompt_template=await resolve_command_template(
-                self.services.store, submission.id, submission.story_id, "character_chat"
-            ),
+        from ainovel.core.agent import SubmitCreationAction, SubmitDraftAction
+        from ainovel.core.discussion import DiscussionTurn
+        from ainovel.service.agent_loop import context_for, read_tool, run_agent
+
+        stage = story.model_copy(deep=True)
+        index = next(i for i, item in enumerate(stage.scenes) if item.id == request.scene_id)
+        stage.scenes = stage.scenes[: index + 1]
+        stage.planned_scenes = []
+        stage.active_scene_leaf_id = None
+        stage.world = WorldSetting()
+        stage.writer = type(stage.writer)()
+        stage.preferences = type(stage.preferences)()
+        stage.characters = [item for item in stage.characters if item.id == character.id]
+        template = await resolve_command_template(
+            self.services.store, submission.id, submission.story_id, "character_chat"
         )
-        if result.session_id != request.session_id or result.snapshot_id != snapshot.id:
-            raise ValueError("角色回复的会话或快照 ID 不符")
-        return CommandOutput(chat=result, message="角色采访已保存，不改变正文")
+
+        def build(results):
+            return context_for(
+                stage,
+                submission.base_revision_id,
+                "character_chat",
+                request.message,
+                history=[DiscussionTurn(role=t.role, content=t.content) for t in history],
+                results=results,
+                task_input={"character_name": character.name, "stage_scene_id": str(request.scene_id),"known_experiences":[item.model_dump(mode="json") for item in snapshot.experiences[-5:]]},
+                recent=0,
+            )
+
+        async def execute(action):
+            if (
+                action.arguments.scope not in ("character", "state")
+                or action.arguments.entity_id != character.id
+            ):
+                raise ValueError("角色对话只能读取本角色在选定阶段的资料")
+            return await read_tool(self.services, stage, submission.base_revision_id, action, submission.id)
+
+        result = await run_agent(self.services, submission.id, "character_chat", template, build, execute)
+        if isinstance(result, (SubmitDraftAction, SubmitCreationAction)):
+            raise ValueError("角色对话不能提交小说修改")
+        return CommandOutput(
+            chat=ChatResult(session_id=request.session_id, snapshot_id=snapshot.id, reply=result.reply)
+        )
 
 
 class StartCharacterChatHandler(Handler[StartCharacterChatRequest]):
@@ -858,9 +761,12 @@ class CommandBus:
             UpdateStoryFieldSchemaHandler,
         )
         from ainovel.service.recovery import RecoverCommandHandler
+        from ainovel.service.scene_planning import PlanSceneHandler, SelectSceneBranchHandler
 
         self.services = services
         self.handlers = (
+            PlanSceneHandler(services),
+            SelectSceneBranchHandler(services),
             ApplyFieldTemplateHandler(services),
             EditFieldsHandler(services),
             SaveFieldTemplateHandler(services),

@@ -14,8 +14,6 @@ from ainovel.core.domain import (
     CommandSubmission,
     GenerateRequest,
     InterviewRequest,
-    PromptTask,
-    PromptTemplateVersion,
     RecoverCommandRequest,
     ReviewDraftRequest,
     UndoRequest,
@@ -38,25 +36,20 @@ class OnceFailingModel(MockModel):
         self.schema_name = schema_name
         self.failed = False
 
-    async def generate(
-        self,
-        schema: type[T],
-        task: PromptTask,
-        context: BaseModel,
-        command_id: UUID,
-        *,
-        prompt_template: PromptTemplateVersion | None = None,
-    ) -> T:
-        if schema.__name__ == self.schema_name and not self.failed:
+    async def choose_agent_tool(self, context, command_id, *, prompt_template=None):
+        task = {"Draft": "writing", "InterviewResult": "creation_interview", "ChatResult": "character_chat"}[
+            self.schema_name
+        ]
+        if context.task == task and not self.failed:
             self.failed = True
             raise RuntimeError("simulated provider failure")
-        return await super().generate(schema, task, context, command_id, prompt_template=prompt_template)
+        return await super().choose_agent_tool(context, command_id, prompt_template=prompt_template)
 
 
 def fail_once(harness: Harness, schema_name: str = "Draft") -> None:
     model = OnceFailingModel(harness.runtime.sink, schema_name)
     harness.runtime.services.model = model
-    harness.runtime.services.workflow.model = model
+    harness.runtime.services.writing_agent.model = model
 
 
 async def request(
@@ -74,8 +67,8 @@ async def test_failed_generation_can_resume_and_every_recovery_can_be_undone() -
     try:
         await h.create()
         fail_once(h)
-        original_head = h.head
         failed = await h.execute(GenerateRequest(instruction="写第一幕"))
+        original_head = failed.submission.base_revision_id
         assert failed.status == "failed" and h.head == original_head
         saved = await h.runtime.store.checkpoint(failed.submission.id)
         assert saved is not None and saved.plan is not None
@@ -95,7 +88,7 @@ async def test_failed_generation_can_resume_and_every_recovery_can_be_undone() -
                 for item in events
                 if item.event.trace
             )
-            == 1
+            == 0
         )
         for _ in range(2):
             undo = await UndoService(h.runtime.store).state(h.story_id)
@@ -198,14 +191,28 @@ async def test_creation_session_failed_interview_can_be_retried_and_undone() -> 
         await h.cleanup()
 
 
-async def test_failed_atomic_finalization_retries_after_confirmation() -> None:
+async def test_failed_database_confirmation_retries_without_a_model_call(monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
     h = Harness(auto_confirm=False)
     await h.runtime.store.initialize()
     try:
         await h.create()
-        fail_once(h, "FinalizationResult")
         generated = await h.execute(GenerateRequest(instruction="第一幕"))
         pending = generated.output.writing_draft
+        model = h.runtime.services.model
+        model.choose_agent_tool = AsyncMock(side_effect=model.choose_agent_tool)
+        commit = h.runtime.services.commit
+        calls = 0
+
+        async def fail_database_once(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("simulated database failure")
+            return await commit(*args, **kwargs)
+
+        monkeypatch.setattr(h.runtime.services, "commit", fail_database_once)
         failed = await h.execute(
             ReviewDraftRequest(
                 generation_command_id=generated.submission.id,
@@ -221,24 +228,7 @@ async def test_failed_atomic_finalization_retries_after_confirmation() -> None:
         completed = await h.runtime.store.command(failed.submission.id)
         assert completed.status == "completed", completed.error
         assert len((await h.runtime.store.head(h.story_id)).story.scenes) == 1
-        events = await h.runtime.store.events(failed.submission.id)
-        assert (
-            sum(
-                item.event.type == "step.started" and item.event.trace.node == "extract"
-                for item in events
-                if item.event.trace
-            )
-            == 2
-        )
-        assert (
-            sum(
-                item.event.type == "llm.completed"
-                and item.event.trace
-                and item.event.trace.node == "FinalizationResult"
-                for item in events
-            )
-            == 1
-        )
+        assert model.choose_agent_tool.await_count == 0
     finally:
         await h.cleanup()
 

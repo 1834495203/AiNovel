@@ -10,7 +10,10 @@ from redis.exceptions import RedisError
 from sqlalchemy.exc import IntegrityError
 
 from ainovel.bootstrap.runtime import Runtime
+from ainovel.controller.access import AccessGate, AccessMiddleware
 from ainovel.controller.assets import WebAssets
+from ainovel.controller.studio import router as studio_router
+from ainovel.core.ai_contracts import AIContractCatalog
 from ainovel.core.characters import Snapshot
 from ainovel.core.config import Settings
 from ainovel.core.discussion import DiscussionSession
@@ -72,15 +75,28 @@ class FieldDocumentView(Model):
 def create_app(settings: Settings | None = None, job_queue: JobQueue | None = None) -> FastAPI:
     runtime = Runtime(settings)
     queue = job_queue or JobQueue(runtime.settings.redis_url)
+    studio_api, studio_repository = studio_router(runtime.store, runtime.settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Schema initialization is an explicit CLI action, not a request-time side effect.
+        await studio_repository.initialize()
+        # An interrupted turn never silently resumes paid calls after a server restart.
+        for novel in await studio_repository.list():
+            if novel.busy:
+                novel.busy = False
+                novel.running = ""
+                novel.error = "服务已重启，演绎进度已保存。请检查后继续。"
+                await studio_repository.save(novel)
         yield
         await queue.close()
         await runtime.close()
 
     app = FastAPI(title="AI Novel MVP", version="0.1.0", lifespan=lifespan)
+    access = AccessGate(runtime.settings)
+    app.add_middleware(AccessMiddleware, gate=access)
+    app.add_api_route("/login", access.login, methods=["GET","POST"], include_in_schema=False)
+    app.add_api_route("/logout", access.logout, methods=["POST"], include_in_schema=False)
+    app.include_router(studio_api)
 
     @app.get("/api/field-templates", response_model=FieldTemplateLibrary)
     async def field_templates() -> FieldTemplateLibrary:
@@ -208,6 +224,11 @@ def create_app(settings: Settings | None = None, job_queue: JobQueue | None = No
     ) -> HistoryPage:
         return await project_history(runtime.store, scope_id, offset, limit)
 
+    @app.get("/api/ai-contracts", response_model=AIContractCatalog)
+    async def ai_contracts():
+        from ainovel.core.ai_contracts import schema_catalog
+        return schema_catalog()
+
     @app.get("/api/prompt-templates", response_model=PromptTemplateLibrary)
     async def prompt_templates(story_id: UUID | None = None) -> PromptTemplateLibrary:
         if story_id is not None:
@@ -222,11 +243,14 @@ def create_app(settings: Settings | None = None, job_queue: JobQueue | None = No
             request.context,
             legacy_guidance=request.guidance if request.source is None else "",
         )
+        from ainovel.core.context_layout import default_context_source
+        context_rendered = preview_prompt_source(request.task, request.context_source if request.context_source is not None else default_context_source(), request.context)
+        context_parts = [part.strip() for part in context_rendered.text.split("<!-- section -->") if part.strip()]
         return PromptTemplatePreview(
             strategy_preview=rendered.text,
             note="这是角色与任务提示模板的完整渲染。仅包含你提供的预览上下文；运行时资料投影、工具协议与实际发送内容以本次运行步骤为准。",
             rendered_prompt=rendered.text,
-            rendered_messages=[PromptPreviewMessage(role="system", content=rendered.text)],
+            rendered_messages=[PromptPreviewMessage(role="system", content=rendered.text), *[PromptPreviewMessage(role="user",content=part) for part in context_parts]],
             template_path=rendered.template_path,
             source_hash=rendered.source_hash,
             context_variables=rendered.context_variables,

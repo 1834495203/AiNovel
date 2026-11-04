@@ -9,6 +9,9 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://novel:change-me@localhost:5432/novel"
     redis_url: str = "redis://localhost:6379/0"
+    access_password_hash: SecretStr = SecretStr("")
+    access_session_secret: SecretStr = SecretStr("")
+    access_session_hours: int = Field(default=12, ge=1, le=168)
     llm_provider: Literal["mock", "openai"] = "mock"
     llm_base_url: str = Field(
         default="https://api.openai.com/v1", validation_alias=AliasChoices("LLM_BASE_URL", "OPENAI_BASE_URL")
@@ -28,6 +31,6 @@ class Settings(BaseSettings):
     max_rewrites: int = Field(default=2, ge=0, le=5)
     recent_scenes: int = Field(default=2, ge=1, le=10)
     story_maintenance_interval: int = Field(default=5, ge=2, le=50)
-    discussion_max_steps: int = Field(default=8, ge=2, le=20)
+    agent_max_steps: int = Field(default=6, ge=1, le=20)
     chunk_target: int = Field(default=1500, ge=100)
     model_timeout: float = Field(default=120, ge=1)

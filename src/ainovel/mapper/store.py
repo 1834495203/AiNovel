@@ -31,8 +31,8 @@ from ainovel.core.domain import (
     StorySummary,
     StoryView,
     Trace,
-    WorkflowState,
     WritingDraft,
+    WritingState,
 )
 from ainovel.core.errors import ConflictError, InvalidCheckpointError, StoryUnavailableError
 from ainovel.mapper.models import (
@@ -115,7 +115,7 @@ class Store:
         scene_id = None
         if row.checkpoint_json is not None:
             try:
-                scene_id = WorkflowState.model_validate_json(row.checkpoint_json).scene_id
+                scene_id = WritingState.model_validate_json(row.checkpoint_json).scene_id
             except ValidationError:
                 # Keep malformed historical checkpoint JSON intact and still show
                 # the typed command metadata in the UI.
@@ -202,7 +202,7 @@ class Store:
             projection = self.command_projection(row)
             if strict_checkpoint and projection.checkpoint_json is not None:
                 try:
-                    WorkflowState.model_validate_json(projection.checkpoint_json)
+                    WritingState.model_validate_json(projection.checkpoint_json)
                 except ValidationError as error:
                     raise InvalidCheckpointError(command_id, error) from error
             return self.projected_view(projection)
@@ -218,14 +218,14 @@ class Store:
             ).one_or_none()
             return CommandLifecycle(id=row.id, status=row.status, undone_at=row.undone_at) if row else None
 
-    async def checkpoint(self, command_id: UUID) -> WorkflowState | None:
+    async def checkpoint(self, command_id: UUID) -> WritingState | None:
         async with self.sessions() as session:
             row = await session.get(CommandRow, command_id)
             if row is None:
                 raise ValueError("命令不存在")
             return row.checkpoint
 
-    async def save_checkpoint(self, state: WorkflowState) -> None:
+    async def save_checkpoint(self, state: WritingState) -> None:
         async with self.sessions.begin() as session:
             row = await session.get(CommandRow, state.execution_id)
             if row is None:
@@ -445,6 +445,8 @@ class Store:
                 source_hash = metadata.source_hash
                 context_variables = PROMPT_CONTEXT_VARIABLES
                 context_schema = metadata.context_schema
+            from ainovel.core.context_layout import default_context_source
+            render_prompt_source(request.task, request.context_source if request.context_source is not None else default_context_source(), PromptRuntimeContext())
             version = PromptTemplateVersion(
                 id=uuid4(),
                 scope=request.scope,
@@ -452,6 +454,7 @@ class Store:
                 task=request.task,
                 name=request.name,
                 version=(latest or 0) + 1,
+                context_source=request.context_source if request.context_source is not None else metadata.context_source,
                 guidance=request.guidance.strip() if source_format == "legacy_guidance" else "",
                 source_format=source_format,
                 source=source,
@@ -830,6 +833,8 @@ class Store:
             if already_recorded is not None:
                 return
         readonly_chat = submission.payload.kind in ("discussion", "start_discussion", "character_chat", "start_character_chat")
+        if submission.payload.kind in ("discussion", "start_discussion") and submission.payload.mode == "planning":
+            readonly_chat = False
         before = OperationMemento(story_id=None if readonly_chat else story_id or submission.story_id)
         if submission.payload.kind == "set_setup_draft_deleted":
             before.draft_id = submission.session_id
@@ -880,7 +885,7 @@ class Store:
             checkpoint_raw = None
             if raw_checkpoint is not None:
                 try:
-                    checkpoint = WorkflowState.model_validate_json(raw_checkpoint)
+                    checkpoint = WritingState.model_validate_json(raw_checkpoint)
                 except ValidationError:
                     checkpoint_raw = raw_checkpoint
             before.commands.append(

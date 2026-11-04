@@ -76,9 +76,9 @@ async def test_all_model_modes_share_injected_transport_audit_and_lifecycle() ->
     command_id = uuid4()
     assert await service.generate(Draft, "writing", Input(instruction="继续"), command_id) == draft
     assert isinstance(
-        await service.choose_discussion_tool(discussion_context(), command_id), SearchStoryAction
+        await service.choose_agent_tool(discussion_context(), command_id), SearchStoryAction
     )
-    assert isinstance(await service.choose_discussion_tool(discussion_context(), command_id), ReplyAction)
+    assert isinstance(await service.choose_agent_tool(discussion_context(), command_id), ReplyAction)
     assert await service.embed(["前文"], command_id) == [[1.0] * 8]
     assert [item.endpoint for item in transport.requests] == ["chat/completions"] * 3 + ["embeddings"]
     assert [trace.node for trace in sink.traces] == ["Draft", "discussion", "discussion", "embedding"]
@@ -114,7 +114,7 @@ async def test_both_completion_modes_share_bounded_repair_and_attempt_auditing(
     if mode == "structured":
         await service.generate(Draft, "writing", Input(instruction="继续"), uuid4())
     else:
-        await service.choose_discussion_tool(discussion_context(), uuid4())
+        await service.choose_agent_tool(discussion_context(), uuid4())
     assert [trace.attempt for trace in sink.traces] == [1, 2]
     assert sink.traces[0].error and not sink.traces[1].error
     assert sink.traces[0].prompt_version == sink.traces[1].prompt_version
@@ -133,7 +133,7 @@ async def test_network_errors_are_audited_once_without_output_repairs(mode: str)
         if mode == "structured":
             await service.generate(Draft, "writing", Input(instruction="继续"), uuid4())
         else:
-            await service.choose_discussion_tool(discussion_context(), uuid4())
+            await service.choose_agent_tool(discussion_context(), uuid4())
     assert len(transport.requests) == len(sink.traces) == 1
     assert sink.traces[0].error == "网络失败"
     await service.close()

@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from configured_fields import make_world
 from sqlalchemy import delete, select
 
 from ainovel.bootstrap.runtime import Runtime
@@ -18,26 +19,23 @@ from ainovel.core.domain import (
     CommandSubmission,
     CommandView,
     CreateStoryRequest,
+    CreationProposal,
     Direction,
     DirectionRequest,
     GenerateRequest,
     InterviewRequest,
-    JudgeResult,
     PromptTemplateSelection,
     ReindexRequest,
     RejectRewriteRequest,
     Request,
-    ResolveCharacterRequest,
     RevertRequest,
     ReviewDraftRequest,
     RewriteRequest,
     SavePromptTemplateRequest,
-    StorySetup,
     Turn,
     UndoRequest,
 )
 from ainovel.infrastructure.job_queue import JobQueue
-from ainovel.llm.mock import MockModel
 from ainovel.mapper.models import (
     ChunkRow,
     CommandRow,
@@ -74,6 +72,31 @@ class Harness:
     async def execute(
         self, payload: Request, base: UUID | None = None, story_id: UUID | None = None
     ) -> CommandView:
+        if isinstance(payload, GenerateRequest) and payload.planned_scene_id is None:
+            # Legacy scenarios still exercise writing after explicitly preparing a scene.
+            from ainovel.core.domain import PlanSceneRequest
+            from ainovel.service.scene_planning import next_scene
+
+            source = (
+                (await self.runtime.store.revision(base))
+                if base
+                else await self.runtime.store.head(story_id or self.story_id)
+            )
+            planned = next_scene(source.story)
+            if planned is None:
+                prepared = await self.execute(
+                    PlanSceneRequest(
+                        instruction=payload.instruction, parent_id=source.story.active_scene_leaf_id
+                    ),
+                    base=base,
+                    story_id=story_id,
+                )
+                if prepared.status != "completed":
+                    return prepared
+                base = self.head
+                source = await self.runtime.store.head(story_id or self.story_id)
+                planned = next_scene(source.story)
+            payload = payload.model_copy(update={"planned_scene_id": planned.id})
         standalone = payload.kind in ("interview", "create_story")
         submission = CommandSubmission(
             payload=payload,
@@ -108,20 +131,16 @@ class Harness:
         return await self.execute(
             CreateStoryRequest(
                 confirmed=True,
-                setup=StorySetup(
+                proposal=CreationProposal(
                     title="集成测试-" + uuid4().hex[:8],
-                    world="近未来都市",
+                    world=make_world("近未来都市"),
                     characters=[CharacterSpec(name="林初")],
-                    preferences=["克制"],
-                    dislikes=["突然反转"],
+                    preferences={"entries": [{"name": "偏好", "value": "克制；避免突然反转"}]},
                 ),
             )
         )
 
     async def cleanup(self) -> None:
-        if self.runtime.services.workflow.checkpoints.ready:
-            for command_id in self.ids:
-                await self.runtime.services.workflow.checkpoints.saver.adelete_thread(str(command_id))
         async with self.runtime.store.sessions.begin() as session:
             commands = (await session.scalars(select(CommandRow).where(CommandRow.id.in_(self.ids)))).all()
             sessions = [row.payload.session_id for row in commands if row.payload.session_id]
@@ -136,12 +155,16 @@ class Harness:
                 revision_ids = select(RevisionRow.id).where(RevisionRow.story_id == self.story_id)
                 await session.execute(delete(ChunkRow).where(ChunkRow.revision_id.in_(revision_ids)))
                 await session.execute(delete(FieldChangeRow).where(FieldChangeRow.story_id == self.story_id))
-                await session.execute(delete(FieldSnapshotRow).where(FieldSnapshotRow.story_id == self.story_id))
+                await session.execute(
+                    delete(FieldSnapshotRow).where(FieldSnapshotRow.story_id == self.story_id)
+                )
                 await session.execute(delete(RevisionRow).where(RevisionRow.story_id == self.story_id))
                 await session.execute(delete(StoryRow).where(StoryRow.id == self.story_id))
             await session.execute(delete(EventRow).where(EventRow.command_id.in_(self.ids)))
             await session.execute(delete(FieldTemplateRow).where(FieldTemplateRow.command_id.in_(self.ids)))
-            await session.execute(delete(FieldTemplateSetRow).where(FieldTemplateSetRow.command_id.in_(self.ids)))
+            await session.execute(
+                delete(FieldTemplateSetRow).where(FieldTemplateSetRow.command_id.in_(self.ids))
+            )
             await session.execute(delete(OperationRow).where(OperationRow.command_id.in_(self.ids)))
             await session.execute(delete(CommandRow).where(CommandRow.id.in_(self.ids)))
         for command_id in self.ids:
@@ -193,7 +216,7 @@ async def test_interview_creation_generation_and_noncanon_chat(harness: Harness)
     assert chat.output.chat.snapshot_id == first_snapshot.id
     assert not chat.output.chat.canon
     assert (await harness.runtime.store.head(harness.story_id)).revision_id == story2.revision_id
-    assert len(await harness.runtime.store.revisions(harness.story_id)) == 3
+    assert len(await harness.runtime.store.revisions(harness.story_id)) == 5
 
 
 async def test_prompt_template_versions_pin_per_run_and_undo_restores_binding(harness: Harness) -> None:
@@ -220,8 +243,8 @@ async def test_prompt_template_versions_pin_per_run_and_undo_restores_binding(ha
     assert checkpoint is not None
     assert next(item for item in checkpoint.prompt_templates if item.task == "writing").id == version.id
 
-    # Waiting for draft and confirming it each create an undoable operation.
-    for _ in range(3):
+    # Preparing a scene, generating and confirming prose are separate reversible operations.
+    for _ in range(4):
         state = await UndoService(harness.runtime.store).state(harness.story_id)
         undo = await harness.execute(UndoRequest(expected_operation_id=state.operation_id))
         assert undo.status == "completed", undo.error
@@ -258,7 +281,7 @@ async def test_preview_branch_revert_conflict_and_delivery_idempotency(harness: 
     branch = await harness.runtime.store.head(harness.story_id)
     assert len(branch.story.scenes) == 1
     assert selected in branch.story.scenes[0].text
-    assert "咽了回去" in branch.story.scenes[0].text
+    assert branch.story.scenes[0].text == preview.output.rewrite.replacement + scene.text[len(selected) :]
     assert len((await harness.runtime.store.revision(source)).story.scenes) == 2
     revision_count = len(await harness.runtime.store.revisions(harness.story_id))
     await harness.worker.process(accepted.submission.id)
@@ -274,58 +297,38 @@ async def test_preview_branch_revert_conflict_and_delivery_idempotency(harness: 
     assert chunks and all(chunk.chapter_id == restored.story.chapters[0].id for chunk in chunks)
 
 
-async def test_npc_two_phase_approval_resume_and_historical_visibility(harness: Harness) -> None:
+async def test_writing_has_no_automatic_character_approval_or_extra_agents(harness: Harness) -> None:
+    from unittest.mock import AsyncMock
+
+    harness.auto_confirm = False
     await harness.create()
     await harness.execute(GenerateRequest(instruction="第一幕"))
-    before = await harness.runtime.store.head(harness.story_id)
-    generation = await harness.execute(GenerateRequest(instruction="引入一个新角色 NPC"))
-    assert generation.status == "waiting", generation.error
-    assert generation.output.approval_phase == "consent"
-    premature = await harness.execute(
-        ResolveCharacterRequest(
-            generation_command_id=generation.submission.id,
-            decision="accept",
-            character=CharacterSpec(name="周启明"),
-        )
-    )
-    assert premature.status == "failed"
-    consent = await harness.execute(
-        ResolveCharacterRequest(generation_command_id=generation.submission.id, decision="consent")
-    )
-    assert consent.status == "completed", consent.error
-    assert consent.output.approval_phase == "profile"
-    assert (await harness.runtime.store.head(harness.story_id)).revision_id == before.revision_id
-    accepted = await harness.execute(
-        ResolveCharacterRequest(
-            generation_command_id=generation.submission.id,
-            decision="accept",
-            character=consent.output.character,
-        )
-    )
-    assert accepted.status == "completed", accepted.error
-    await harness.worker.process(generation.submission.id)
-    await harness.confirm_generation(generation.submission.id)
-    completed = await harness.runtime.store.command(generation.submission.id)
-    assert completed.status == "completed", completed.error
-    after = await harness.runtime.store.head(harness.story_id)
-    assert len(after.story.characters) == 2 and len(after.story.scenes) == 2
-    npc = after.story.characters[-1]
-    with pytest.raises(ValueError, match="尚未出现"):
-        after.story.snapshot(npc.id, after.story.scenes[0].id)
-
-
-async def test_rejected_npc_and_whole_chapter_edit(harness: Harness) -> None:
-    await harness.create()
-    generation = await harness.execute(GenerateRequest(instruction="引入新角色"))
-    rejected = await harness.execute(
-        ResolveCharacterRequest(generation_command_id=generation.submission.id, decision="reject")
-    )
-    assert rejected.status == "completed", rejected.error
-    await harness.worker.process(generation.submission.id)
-    await harness.confirm_generation(generation.submission.id)
     first = await harness.runtime.store.head(harness.story_id)
-    harness.head = first.revision_id
+    assert first.story.scenes == []
     assert len(first.story.characters) == 1
+    generation = (await harness.runtime.store.commands(harness.story_id))[-1]
+    await harness.confirm_generation(generation.submission.id)
+    model = harness.runtime.services.model
+    model.choose_agent_tool = AsyncMock(side_effect=model.choose_agent_tool)
+    second = await harness.execute(GenerateRequest(instruction="引入新角色，但不能触发额外角色审批流程"))
+    assert second.status == "waiting" and second.output.writing_draft is not None
+    assert second.output.approval_phase is None and second.output.need is None
+    # Scene planning and writing reuse the two explicit business agents only.
+    assert {call.args[0].task for call in model.choose_agent_tool.call_args_list} == {
+        "scene_planning",
+        "writing",
+    }
+    count = model.choose_agent_tool.await_count
+    confirmed = await harness.confirm_generation(second.submission.id)
+    assert confirmed.status == "completed", confirmed.error
+    assert model.choose_agent_tool.await_count == count
+    after = await harness.runtime.store.head(harness.story_id)
+    assert len(after.story.characters) == 1 and len(after.story.scenes) == 2
+
+
+async def test_whole_chapter_edit_uses_the_writing_agent(harness: Harness) -> None:
+    await harness.create()
+    await harness.execute(GenerateRequest(instruction="第一幕"))
     await harness.execute(GenerateRequest(instruction="继续"))
     before = await harness.runtime.store.head(harness.story_id)
     text = "\n\n".join(scene.text for scene in before.story.scenes)
@@ -342,20 +345,6 @@ async def test_rejected_npc_and_whole_chapter_edit(harness: Harness) -> None:
     accepted = await harness.execute(AcceptRewriteRequest(proposal_command_id=proposal.submission.id))
     assert accepted.status == "completed", accepted.error
     assert len((await harness.runtime.store.head(harness.story_id)).story.scenes) == 1
-
-
-class RejectingModel(MockModel):
-    def _result(self, schema, context):
-        if schema is JudgeResult:
-            return JudgeResult(
-                user_intent_satisfied=False,
-                direction_satisfied=True,
-                overall_score=0,
-                issues=[],
-                should_rewrite=True,
-                rewrite_instructions=["仍不符合意图"],
-            )
-        return super()._result(schema, context)
 
 
 async def test_reindex_supports_embedding_dimension_change_without_changing_story(harness: Harness) -> None:
@@ -389,18 +378,6 @@ async def test_discarded_rewrite_is_audited_and_cannot_be_accepted(harness: Harn
     attempted = await harness.execute(AcceptRewriteRequest(proposal_command_id=proposal.submission.id))
     assert attempted.status == "failed"
     assert (await harness.runtime.store.head(harness.story_id)).revision_id == before.revision_id
-
-
-async def test_judge_limit_keeps_failed_draft_out_of_canon(harness: Harness) -> None:
-    await harness.create()
-    before = harness.head
-    harness.runtime.services.workflow.model = RejectingModel(harness.runtime.sink)
-    result = await harness.execute(GenerateRequest(instruction="无法满足的要求"))
-    assert result.status == "failed" and "重写上限" in result.error
-    head = await harness.runtime.store.head(harness.story_id)
-    assert head.revision_id == before and not head.story.scenes
-    checkpoint = await harness.runtime.store.checkpoint(result.submission.id)
-    assert checkpoint.draft is not None
 
 
 async def test_http_queue_sse_replay_and_command_id_deduplication(harness: Harness) -> None:
@@ -448,3 +425,325 @@ async def test_http_queue_sse_replay_and_command_id_deduplication(harness: Harne
             assert conflict.status_code == 409
             health = await client.get("/health")
             assert health.status_code == 200
+
+
+async def test_scene_settings_branches_and_ordered_writing(harness: Harness) -> None:
+    from ainovel.core.domain import PlanSceneRequest, SelectSceneBranchRequest
+    from ainovel.service.scene_planning import next_scene
+
+    assert (await harness.create()).status == "completed"
+    a = await harness.execute(PlanSceneRequest(instruction="第一幕：收到信"))
+    assert a.status == "completed", a.error
+    story = (await harness.runtime.store.head(harness.story_id)).story
+    first = next_scene(story)
+    assert first is not None and not story.scenes
+    for instruction in ("第二幕：去码头", "第二幕分支：去邮局"):
+        result = await harness.execute(PlanSceneRequest(parent_id=first.id, instruction=instruction))
+        assert result.status == "completed", result.error
+    story = (await harness.runtime.store.head(harness.story_id)).story
+    assert len(story.planned_scenes) == 3 and not story.scenes
+    alternate = story.active_scene_leaf_id
+    draft = await harness.execute(GenerateRequest(instruction="依计划写正文", planned_scene_id=first.id))
+    assert draft.status == "completed", draft.error
+    story = (await harness.runtime.store.head(harness.story_id)).story
+    assert story.scenes[0].id == first.id and next_scene(story).id == alternate
+    locked = await harness.execute(PlanSceneRequest(target_id=first.id, instruction="改变第一幕设定"))
+    assert locked.status == "failed" and "锁定" in locked.error
+    # Failure did not change the head or create a new plan.
+    story = (await harness.runtime.store.head(harness.story_id)).story
+    assert len(story.planned_scenes) == 3 and len(story.scenes) == 1
+    selected = await harness.execute(SelectSceneBranchRequest(leaf_id=story.planned_scenes[1].id))
+    assert selected.status == "completed", selected.error
+    story = (await harness.runtime.store.head(harness.story_id)).story
+    assert next_scene(story).id == story.planned_scenes[1].id
+
+
+async def test_planning_agent_batches_across_multiple_sessions(harness: Harness) -> None:
+    from unittest.mock import AsyncMock
+
+    from ainovel.core.discussion import (
+        DiscussionRequest,
+        ReplyAction,
+        SaveScenePlansAction,
+        SaveScenePlansArguments,
+        ScenePlanInput,
+        ScenePlanUpdate,
+        StartDiscussionRequest,
+    )
+
+    await harness.create()
+    first_id, second_id, third_id = uuid4(), uuid4(), uuid4()
+    model = harness.runtime.services.model
+    original = model.choose_agent_tool
+    session_a, session_b = uuid4(), uuid4()
+    for session_id in (session_a, session_b):
+        started = await harness.execute(StartDiscussionRequest(session_id=session_id, mode="planning"))
+        assert started.status == "completed", started.error
+    model.choose_agent_tool = AsyncMock(
+        side_effect=[
+            SaveScenePlansAction(
+                arguments=SaveScenePlansArguments(
+                    create=[
+                        ScenePlanInput(id=first_id, title="来信", summary="收到一封信"),
+                        ScenePlanInput(id=second_id, parent_id=first_id, title="码头", summary="去码头"),
+                        ScenePlanInput(
+                            id=third_id, parent_id=second_id, title="灯塔", summary="发现灯塔线索"
+                        ),
+                    ]
+                )
+            ),
+            ReplyAction(reply="已规划三幕"),
+            SaveScenePlansAction(
+                arguments=SaveScenePlansArguments(
+                    update=[
+                        ScenePlanUpdate(id=second_id, summary="先观察码头守卫"),
+                        ScenePlanUpdate(id=third_id, summary="跟随守卫去灯塔"),
+                    ]
+                )
+            ),
+            ReplyAction(reply="已修改后两幕"),
+        ]
+    )
+    try:
+        first = await harness.execute(
+            DiscussionRequest(mode="planning", session_id=session_a, message="规划三幕")
+        )
+        assert first.status == "completed", first.error
+        assert first.output.discussion.settings_changed
+        second = await harness.execute(
+            DiscussionRequest(mode="planning", session_id=session_b, message="修改后两幕")
+        )
+        assert second.status == "completed", second.error
+        story = (await harness.runtime.store.head(harness.story_id)).story
+        assert len(story.planned_scenes) == 3 and not story.scenes
+        assert story.planned_scenes[1].plan.scene_plan == "先观察码头守卫"
+        assert story.planned_scenes[2].plan.scene_plan == "跟随守卫去灯塔"
+        assert (await harness.runtime.store.checkpoint(first.submission.id)) is None
+        # A settings mutation uses the story undo stack, preserving cross-session order.
+        state = await UndoService(harness.runtime.store).state(harness.story_id)
+        assert state.command_id == second.submission.id
+        undone = await harness.execute(
+            UndoRequest(target_command_id=second.submission.id, expected_operation_id=state.operation_id)
+        )
+        assert undone.status == "completed", undone.error
+        story = (await harness.runtime.store.head(harness.story_id)).story
+        assert story.planned_scenes[1].plan.scene_plan == "去码头"
+    finally:
+        model.choose_agent_tool = original
+
+
+async def test_planning_repeated_tool_stops_and_preserves_success(harness: Harness) -> None:
+    from unittest.mock import AsyncMock
+
+    from ainovel.core.discussion import (
+        DiscussionRequest,
+        SaveScenePlansAction,
+        SaveScenePlansArguments,
+        ScenePlanInput,
+        StartDiscussionRequest,
+    )
+
+    await harness.create()
+    session_id = uuid4()
+    await harness.execute(StartDiscussionRequest(mode="planning", session_id=session_id))
+    action = SaveScenePlansAction(
+        arguments=SaveScenePlansArguments(create=[ScenePlanInput(title="来信", summary="收到信")])
+    )
+    model = harness.runtime.services.model
+    original = model.choose_agent_tool
+    model.choose_agent_tool = AsyncMock(return_value=action)
+    try:
+        result = await harness.execute(
+            DiscussionRequest(mode="planning", session_id=session_id, message="写一幕")
+        )
+        assert result.status == "completed", result.error
+        assert result.output.discussion.settings_changed
+        assert len((await harness.runtime.store.head(harness.story_id)).story.planned_scenes) == 1
+        assert model.choose_agent_tool.await_count == 2
+    finally:
+        model.choose_agent_tool = original
+
+
+async def test_prompt_context_template_is_saved_and_used_in_planning(harness: Harness) -> None:
+    from unittest.mock import AsyncMock
+
+    from ainovel.core.discussion import DiscussionRequest, ReplyAction, StartDiscussionRequest
+    from ainovel.llm.agent import build_agent_request
+
+    await harness.create()
+    source = "幕设定角色：{{ story_title }}"
+    layout = "世界数据：{{ world_context }}<!-- section -->人物数据：{{ characters_context }}"
+    saved = await harness.execute(
+        SavePromptTemplateRequest(
+            scope="story", task="scene_planning", name="分离布局", source=source, context_source=layout
+        )
+    )
+    assert saved.status == "completed", saved.error
+    assert saved.output.prompt_template.context_source == layout
+    session_id = uuid4()
+    await harness.execute(StartDiscussionRequest(session_id=session_id, mode="planning"))
+    model = harness.runtime.services.model
+    original = model.choose_agent_tool
+
+    async def choose(context, command_id, **kwargs):
+        body = build_agent_request(harness.runtime.settings, context, kwargs["prompt_template"]).body
+        assert body.messages[0].content.startswith("幕设定角色：")
+        assert body.messages[2].content.startswith("世界数据：")
+        assert body.messages[3].content.startswith("人物数据：")
+        return ReplyAction(reply="已按独立模板读取资料")
+
+    model.choose_agent_tool = AsyncMock(side_effect=choose)
+    try:
+        result = await harness.execute(
+            DiscussionRequest(session_id=session_id, mode="planning", message="讨论一下")
+        )
+        assert result.status == "completed", result.error
+        pinned = await harness.runtime.store.pin_prompt_templates(result.submission.id, [])
+        assert pinned[0].context_source == layout
+    finally:
+        model.choose_agent_tool = original
+
+
+async def test_planning_reads_materials_on_demand_without_mutating_story(harness: Harness) -> None:
+    from unittest.mock import AsyncMock
+
+    from ainovel.core.discussion import (
+        DiscussionRequest,
+        ReadStoryMaterialsAction,
+        ReadStoryMaterialsArguments,
+        ReplyAction,
+        StartDiscussionRequest,
+    )
+
+    await harness.create()
+    session_id = uuid4()
+    await harness.execute(StartDiscussionRequest(mode="planning", session_id=session_id))
+    head = harness.head
+    model = harness.runtime.services.model
+    original = model.choose_agent_tool
+    model.choose_agent_tool = AsyncMock(
+        side_effect=[
+            ReadStoryMaterialsAction(arguments=ReadStoryMaterialsArguments(scope="world", limit=1)),
+            ReplyAction(reply="已读取世界设定"),
+        ]
+    )
+    try:
+        result = await harness.execute(
+            DiscussionRequest(mode="planning", session_id=session_id, message="读取世界设定")
+        )
+        assert result.status == "completed", result.error
+        outcome = result.output.discussion.tool_results[0]
+        assert outcome.name == "read_story_materials" and outcome.success
+        assert outcome.materials[0].value == "近未来都市"
+        assert not result.output.discussion.settings_changed
+        assert (await harness.runtime.store.head(harness.story_id)).revision_id == head
+    finally:
+        model.choose_agent_tool = original
+
+
+async def test_five_business_agents_and_no_model_call_on_confirmation(harness: Harness) -> None:
+    from unittest.mock import AsyncMock
+
+    from ainovel.core.discussion import DiscussionRequest, StartDiscussionRequest
+    from ainovel.core.domain import (
+        AcceptRewriteRequest,
+        CharacterChatRequest,
+        RewriteRequest,
+        StartCharacterChatRequest,
+    )
+    from ainovel.service.scene_planning import next_scene
+
+    interview = await harness.execute(InterviewRequest(turns=[Turn(role="user", content="一个港口的故事")]))
+    assert interview.status == "completed" and interview.output.interview.proposal
+    await harness.create()
+    await harness.execute(
+        __import__("ainovel.core.domain", fromlist=["PlanSceneRequest"]).PlanSceneRequest(
+            instruction="收到一封信"
+        )
+    )
+    story = (await harness.runtime.store.head(harness.story_id)).story
+    model = harness.runtime.services.model
+    model.choose_agent_tool = AsyncMock(wraps=model.choose_agent_tool)
+    harness.auto_confirm = False
+    draft = await harness.execute(
+        GenerateRequest(instruction="按计划写", planned_scene_id=next_scene(story).id)
+    )
+    assert draft.status == "waiting", draft.error
+    assert not (await harness.runtime.store.head(harness.story_id)).story.scenes
+    assert model.choose_agent_tool.await_count == 1
+    confirmed = await harness.confirm_generation(draft.submission.id)
+    assert confirmed.status == "completed", confirmed.error
+    assert model.choose_agent_tool.await_count == 1
+    head = await harness.runtime.store.head(harness.story_id)
+    assert len(head.story.scenes) == 1
+    session = uuid4()
+    await harness.execute(StartDiscussionRequest(session_id=session))
+    discussed = await harness.execute(DiscussionRequest(session_id=session, message="聊聊这个情节"))
+    assert discussed.status == "completed", discussed.error
+    assert (await harness.runtime.store.head(harness.story_id)).revision_id == head.revision_id
+    character = head.story.characters[0]
+    scene = head.story.scenes[0]
+    started = await harness.execute(StartCharacterChatRequest(character_id=character.id, scene_id=scene.id))
+    chatted = await harness.execute(
+        CharacterChatRequest(
+            character_id=character.id,
+            scene_id=scene.id,
+            session_id=started.output.chat_session_id,
+            message="你在想什么",
+        )
+    )
+    assert chatted.status == "completed" and not chatted.output.chat.canon, chatted.error
+    rewritten = await harness.execute(
+        RewriteRequest(
+            scene_id=scene.id, start=0, end=4, selected_text=scene.text[:4], instruction="换个表达"
+        )
+    )
+    assert rewritten.status == "completed", rewritten.error
+    calls = model.choose_agent_tool.await_count
+    accepted = await harness.execute(AcceptRewriteRequest(proposal_command_id=rewritten.submission.id))
+    assert accepted.status == "completed", accepted.error
+    assert model.choose_agent_tool.await_count == calls
+    tasks = [call.args[0].task for call in model.choose_agent_tool.call_args_list]
+    assert tasks == ["writing", "discussion", "character_chat", "writing"]
+
+
+async def test_draft_revision_undo_and_worker_restart_need_no_graph(harness: Harness) -> None:
+    from unittest.mock import AsyncMock
+
+    from ainovel.core.domain import PlanSceneRequest, ReviewDraftRequest
+
+    await harness.create()
+    await harness.execute(PlanSceneRequest(instruction="来信"))
+    harness.auto_confirm = False
+    generated = await harness.execute(GenerateRequest(instruction="写正文"))
+    assert generated.status == "waiting", generated.error
+    revised = await harness.execute(
+        ReviewDraftRequest(
+            generation_command_id=generated.submission.id,
+            expected_draft_version=1,
+            decision="revise",
+            feedback="精简对白",
+            text_only=True,
+        )
+    )
+    assert revised.status == "completed", revised.error
+    assert revised.output.writing_draft.version == 2
+    assert not (await harness.runtime.store.head(harness.story_id)).story.scenes
+    state = await UndoService(harness.runtime.store).state(harness.story_id)
+    undone = await harness.execute(
+        UndoRequest(target_command_id=revised.submission.id, expected_operation_id=state.operation_id)
+    )
+    assert undone.status == "completed", undone.error
+    parent = await harness.runtime.store.command(generated.submission.id)
+    assert parent.output.writing_draft.version == 1
+    settings = harness.runtime.settings
+    await harness.runtime.close()
+    harness.runtime = Runtime(settings)
+    harness.worker = Worker(harness.runtime, harness.queue)
+    harness.runtime.services.model.choose_agent_tool = AsyncMock(
+        wraps=harness.runtime.services.model.choose_agent_tool
+    )
+    confirmed = await harness.confirm_generation(generated.submission.id)
+    assert confirmed.status == "completed", confirmed.error
+    assert len((await harness.runtime.store.head(harness.story_id)).story.scenes) == 1
+    harness.runtime.services.model.choose_agent_tool.assert_not_awaited()

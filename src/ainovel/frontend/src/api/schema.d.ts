@@ -4,6 +4,247 @@
  */
 
 export interface paths {
+    "/api/studio/contracts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Contracts */
+        get: operations["contracts_api_studio_contracts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Novels */
+        get: operations["novels_api_studio_novels_get"];
+        put?: never;
+        /** Create */
+        post: operations["create_api_studio_novels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Templates */
+        get: operations["templates_api_studio_templates_get"];
+        put?: never;
+        /** Save Template */
+        post: operations["save_template_api_studio_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/templates/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Template */
+        delete: operations["remove_template_api_studio_templates__key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Template */
+        post: operations["apply_template_api_studio_novels__key__template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/template/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Template */
+        post: operations["export_template_api_studio_novels__key__template_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Novel */
+        get: operations["novel_api_studio_novels__key__get"];
+        put?: never;
+        post?: never;
+        /** Purge */
+        delete: operations["purge_api_studio_novels__key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Message */
+        post: operations["message_api_studio_novels__key__message_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn */
+        post: operations["turn_api_studio_novels__key__turn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Control */
+        post: operations["control_api_studio_novels__key__control_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit */
+        post: operations["edit_api_studio_novels__key__edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Settings */
+        post: operations["save_settings_api_studio_novels__key__settings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview */
+        get: operations["preview_api_studio_novels__key__preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Edits */
+        post: operations["preview_edits_api_studio_novels__key__estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/field-templates": {
         parameters: {
             query?: never;
@@ -220,6 +461,23 @@ export interface paths {
         };
         /** History */
         get: operations["history_api_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai-contracts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ai Contracts */
+        get: operations["ai_contracts_api_ai_contracts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -472,6 +730,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIContractCatalog */
+        AIContractCatalog: {
+            /**
+             * Tools
+             * @description 当前 agent 可调用的工具及独立参数、返回值 schema。
+             */
+            tools: components["schemas"]["ToolContract"][];
+            /**
+             * Results
+             * @description 正文等结构化任务使用的结果 schema。
+             */
+            results: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["JsonValue"];
+                };
+            };
+            /**
+             * Context Fields
+             * @description 上下文中实际字段值的结构，独立于用户字段定义。
+             */
+            context_fields: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
         /** AcceptRewriteRequest */
         AcceptRewriteRequest: {
             /**
@@ -537,6 +819,13 @@ export interface components {
             /** Used By Character Id */
             used_by_character_id?: string | null;
         };
+        /** ApplyFieldTemplate */
+        ApplyFieldTemplate: {
+            /** Version */
+            version: number;
+            /** Template Id */
+            template_id: string;
+        };
         /** ApplyFieldTemplateRequest */
         ApplyFieldTemplateRequest: {
             /**
@@ -551,6 +840,45 @@ export interface components {
             template_id: string;
             /** Targets */
             targets: components["schemas"]["FieldTarget"][];
+        };
+        /** Attribute */
+        Attribute: {
+            /**
+             * Key
+             * @description 变量名，同一实体内唯一。
+             */
+            key: string;
+            /**
+             * Value Type
+             * @description 变量值的类型。
+             * @enum {string}
+             */
+            value_type: "str" | "int" | "float" | "bool" | "list";
+            /** @description 当前变量值，必须符合声明的类型。 */
+            current_value: components["schemas"]["JsonValue"];
+            /**
+             * Why
+             * @description 为什么定义这个变量。
+             * @default
+             */
+            why: string;
+            /**
+             * How
+             * @description 变量的叙事表现；数值应说明不同区间的具体表现。
+             * @default
+             */
+            how: string;
+            /**
+             * When
+             * @description 什么情形下应修改此变量。
+             * @default
+             */
+            when: string;
+            /**
+             * @description 0 仅 GM/系统；1 仅所属角色；2 公开，仍受在场范围限制。
+             * @default 2
+             */
+            visibility: components["schemas"]["Visibility"];
         };
         /** Change */
         Change: {
@@ -673,11 +1001,20 @@ export interface components {
         };
         /** CharacterNeed */
         CharacterNeed: {
-            /** Name */
+            /**
+             * Name
+             * @description 拟引入人物的姓名。
+             */
             name: string;
-            /** Role */
+            /**
+             * Role
+             * @description 人物在故事中的作用。
+             */
             role: string;
-            /** Reason */
+            /**
+             * Reason
+             * @description 本幕为何需要这个持续角色。
+             */
             reason: string;
         };
         /** CharacterPatch */
@@ -784,22 +1121,31 @@ export interface components {
             /** Entries */
             entries?: components["schemas"]["Entry-Output"][];
         };
-        /** ChatResult */
+        /**
+         * ChatResult
+         * @description 不修改正文的角色访谈结果。
+         */
         ChatResult: {
             /**
              * Session Id
              * Format: uuid
+             * @description 原样返回输入中的会话标识。
              */
             session_id: string;
             /**
              * Snapshot Id
              * Format: uuid
+             * @description 原样返回本次访谈所用的人物阶段快照标识。
              */
             snapshot_id: string;
-            /** Reply */
+            /**
+             * Reply
+             * @description 符合该人物阶段知识和说话方式的回答。
+             */
             reply: string;
             /**
              * Canon
+             * @description 访谈不属于正式正文事实，恒为假。
              * @default false
              * @constant
              */
@@ -984,7 +1330,7 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
             /** Payload */
-            payload: components["schemas"]["InterviewRequest"] | components["schemas"]["CreateStoryRequest-Input"] | components["schemas"]["GenerateRequest-Input"] | components["schemas"]["DirectionRequest"] | components["schemas"]["RewriteRequest"] | components["schemas"]["AcceptRewriteRequest"] | components["schemas"]["RejectRewriteRequest"] | components["schemas"]["ResolveCharacterRequest-Input"] | components["schemas"]["RevertRequest"] | components["schemas"]["ReindexRequest"] | components["schemas"]["DeleteStoryRequest"] | components["schemas"]["RestoreStoryRequest"] | components["schemas"]["CharacterChatRequest"] | components["schemas"]["StartCharacterChatRequest"] | components["schemas"]["DiscussionRequest"] | components["schemas"]["StartDiscussionRequest"] | components["schemas"]["UndoRequest"] | components["schemas"]["RecoverCommandRequest"] | components["schemas"]["SaveSetupDraftRequest-Input"] | components["schemas"]["SetSetupDraftDeletedRequest"] | components["schemas"]["UpdateStoryRequest-Input"] | components["schemas"]["ReviewDraftRequest"] | components["schemas"]["SavePromptTemplateRequest"] | components["schemas"]["SaveFieldTemplateRequest-Input"] | components["schemas"]["ApplyFieldTemplateRequest"] | components["schemas"]["EditFieldsRequest-Input"] | components["schemas"]["SaveFieldTemplateSetRequest-Input"] | components["schemas"]["InitializeStoryTemplateSetRequest"] | components["schemas"]["UpdateStoryFieldSchemaRequest-Input"];
+            payload: components["schemas"]["InterviewRequest"] | components["schemas"]["CreateStoryRequest-Input"] | components["schemas"]["GenerateRequest-Input"] | components["schemas"]["DirectionRequest"] | components["schemas"]["RewriteRequest"] | components["schemas"]["AcceptRewriteRequest"] | components["schemas"]["RejectRewriteRequest"] | components["schemas"]["ResolveCharacterRequest-Input"] | components["schemas"]["RevertRequest"] | components["schemas"]["ReindexRequest"] | components["schemas"]["DeleteStoryRequest"] | components["schemas"]["RestoreStoryRequest"] | components["schemas"]["CharacterChatRequest"] | components["schemas"]["StartCharacterChatRequest"] | components["schemas"]["DiscussionRequest"] | components["schemas"]["StartDiscussionRequest"] | components["schemas"]["UndoRequest"] | components["schemas"]["RecoverCommandRequest"] | components["schemas"]["SaveSetupDraftRequest-Input"] | components["schemas"]["SetSetupDraftDeletedRequest"] | components["schemas"]["PlanSceneRequest"] | components["schemas"]["SelectSceneBranchRequest"] | components["schemas"]["UpdateStoryRequest-Input"] | components["schemas"]["ReviewDraftRequest"] | components["schemas"]["SavePromptTemplateRequest"] | components["schemas"]["SaveFieldTemplateRequest-Input"] | components["schemas"]["ApplyFieldTemplateRequest"] | components["schemas"]["EditFieldsRequest-Input"] | components["schemas"]["SaveFieldTemplateSetRequest-Input"] | components["schemas"]["InitializeStoryTemplateSetRequest"] | components["schemas"]["UpdateStoryFieldSchemaRequest-Input"];
         };
         /** CommandSubmission */
         "CommandSubmission-Output": {
@@ -1006,7 +1352,7 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
             /** Payload */
-            payload: components["schemas"]["InterviewRequest"] | components["schemas"]["CreateStoryRequest-Output"] | components["schemas"]["GenerateRequest-Output"] | components["schemas"]["DirectionRequest"] | components["schemas"]["RewriteRequest"] | components["schemas"]["AcceptRewriteRequest"] | components["schemas"]["RejectRewriteRequest"] | components["schemas"]["ResolveCharacterRequest-Output"] | components["schemas"]["RevertRequest"] | components["schemas"]["ReindexRequest"] | components["schemas"]["DeleteStoryRequest"] | components["schemas"]["RestoreStoryRequest"] | components["schemas"]["CharacterChatRequest"] | components["schemas"]["StartCharacterChatRequest"] | components["schemas"]["DiscussionRequest"] | components["schemas"]["StartDiscussionRequest"] | components["schemas"]["UndoRequest"] | components["schemas"]["RecoverCommandRequest"] | components["schemas"]["SaveSetupDraftRequest-Output"] | components["schemas"]["SetSetupDraftDeletedRequest"] | components["schemas"]["UpdateStoryRequest-Output"] | components["schemas"]["ReviewDraftRequest"] | components["schemas"]["SavePromptTemplateRequest"] | components["schemas"]["SaveFieldTemplateRequest-Output"] | components["schemas"]["ApplyFieldTemplateRequest"] | components["schemas"]["EditFieldsRequest-Output"] | components["schemas"]["SaveFieldTemplateSetRequest-Output"] | components["schemas"]["InitializeStoryTemplateSetRequest"] | components["schemas"]["UpdateStoryFieldSchemaRequest-Output"];
+            payload: components["schemas"]["InterviewRequest"] | components["schemas"]["CreateStoryRequest-Output"] | components["schemas"]["GenerateRequest-Output"] | components["schemas"]["DirectionRequest"] | components["schemas"]["RewriteRequest"] | components["schemas"]["AcceptRewriteRequest"] | components["schemas"]["RejectRewriteRequest"] | components["schemas"]["ResolveCharacterRequest-Output"] | components["schemas"]["RevertRequest"] | components["schemas"]["ReindexRequest"] | components["schemas"]["DeleteStoryRequest"] | components["schemas"]["RestoreStoryRequest"] | components["schemas"]["CharacterChatRequest"] | components["schemas"]["StartCharacterChatRequest"] | components["schemas"]["DiscussionRequest"] | components["schemas"]["StartDiscussionRequest"] | components["schemas"]["UndoRequest"] | components["schemas"]["RecoverCommandRequest"] | components["schemas"]["SaveSetupDraftRequest-Output"] | components["schemas"]["SetSetupDraftDeletedRequest"] | components["schemas"]["PlanSceneRequest"] | components["schemas"]["SelectSceneBranchRequest"] | components["schemas"]["UpdateStoryRequest-Output"] | components["schemas"]["ReviewDraftRequest"] | components["schemas"]["SavePromptTemplateRequest"] | components["schemas"]["SaveFieldTemplateRequest-Output"] | components["schemas"]["ApplyFieldTemplateRequest"] | components["schemas"]["EditFieldsRequest-Output"] | components["schemas"]["SaveFieldTemplateSetRequest-Output"] | components["schemas"]["InitializeStoryTemplateSetRequest"] | components["schemas"]["UpdateStoryFieldSchemaRequest-Output"];
         };
         /** CommandView */
         CommandView: {
@@ -1032,6 +1378,114 @@ export interface components {
             undone: boolean;
             /** Scene Id */
             scene_id?: string | null;
+        };
+        /** Compression */
+        Compression: {
+            /**
+             * Full Chapters
+             * @description 最近多少章发送完整内容。
+             * @default 2
+             */
+            full_chapters: number;
+            /**
+             * Scene Chapters
+             * @description 再往前多少章发送幕设定和演绎，其余发送章节摘要。
+             * @default 3
+             */
+            scene_chapters: number;
+            /**
+             * Snapshot Interval
+             * @description 角色快照的确认幕间隔。
+             * @default 5
+             */
+            snapshot_interval: number;
+            /**
+             * Max Calls
+             * @description 一轮 GM 与角色合计模型调用预算。
+             * @default 16
+             */
+            max_calls: number;
+        };
+        /**
+         * ContextField
+         * @description One filled field, without storage definitions or template metadata.
+         */
+        ContextField: {
+            /**
+             * Id
+             * @description 已有字段值的稳定 ID，可用于定向修改。
+             */
+            id?: string | null;
+            /**
+             * Name
+             * @description 用户定义的字段名称。
+             */
+            name: string;
+            /** @description 实际填写的内容。 */
+            value?: components["schemas"]["JsonValue"];
+            /**
+             * Description
+             * @description 用户提供的字段解释。
+             * @default
+             */
+            description: string;
+            /**
+             * Children
+             * @description 已填写的子字段。
+             */
+            children?: components["schemas"]["ContextField"][];
+        };
+        /** ControlRequest */
+        ControlRequest: {
+            /** Version */
+            version: number;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "confirm_creation" | "new_scene" | "confirm_scene" | "reset" | "branch" | "write" | "undo_prose" | "finish_chapter" | "delete" | "restore" | "enter" | "leave";
+            /**
+             * Scene Id
+             * @default
+             */
+            scene_id: string;
+            /**
+             * Branch Id
+             * @default
+             */
+            branch_id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * New Chapter
+             * @default false
+             */
+            new_chapter: boolean;
+            /**
+             * Instruction
+             * @default
+             */
+            instruction: string;
+        };
+        /** ConversationMessage */
+        ConversationMessage: {
+            /** Id */
+            id?: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
         };
         /** CreateStoryRequest */
         "CreateStoryRequest-Input": {
@@ -1137,6 +1591,24 @@ export interface components {
              */
             kind: "delete_story";
         };
+        /** Description */
+        Description: {
+            /**
+             * Name
+             * @description 描述字段名称，同一实体内唯一。
+             */
+            name: string;
+            /**
+             * Value
+             * @description 描述内容列表。
+             */
+            value?: string[];
+            /**
+             * @description 0 仅 GM/系统；1 仅所属角色；2 公开，仍受在场范围限制。
+             * @default 2
+             */
+            visibility: components["schemas"]["Visibility"];
+        };
         /** Direction */
         Direction: {
             /**
@@ -1176,20 +1648,36 @@ export interface components {
             kind: "direction";
             direction: components["schemas"]["Direction"];
         };
-        /** DiscussionExcerpt */
+        /**
+         * DiscussionExcerpt
+         * @description 从已确认正文检索出的片段。
+         */
         DiscussionExcerpt: {
-            /** Title */
+            /**
+             * Title
+             * @description 片段类别或来源标题。
+             */
             title: string;
-            /** Text */
+            /**
+             * Text
+             * @description 查到的正文片段。
+             */
             text: string;
             /**
              * Summary
+             * @description 可用时提供片段摘要。
              * @default
              */
             summary: string;
         };
         /** DiscussionRequest */
         DiscussionRequest: {
+            /**
+             * Mode
+             * @default discussion
+             * @enum {string}
+             */
+            mode: "discussion" | "planning";
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1230,6 +1718,12 @@ export interface components {
         /** DiscussionSession */
         DiscussionSession: {
             /**
+             * Mode
+             * @default discussion
+             * @enum {string}
+             */
+            mode: "discussion" | "planning";
+            /**
              * Id
              * Format: uuid
              */
@@ -1257,30 +1751,78 @@ export interface components {
              */
             message_count: number;
         };
-        /** DiscussionToolResult */
+        /**
+         * DiscussionToolResult
+         * @description 运行记录的内部消息配对元数据，不发送给模型。
+         */
         DiscussionToolResult: {
             /**
              * Name
+             * @description 执行的工具名称。
              * @enum {string}
              */
-            name: "search_story" | "update_story_settings" | "edit_fields";
+            name: "search_story" | "read_story_materials" | "save_scene_plans";
             /**
              * Success
+             * @description 本次工具调用是否成功。
              * @default true
              */
             success: boolean;
-            /** Message */
+            /**
+             * Message
+             * @description 操作结果或可修正的错误说明；保存工具的结果在本轮结束时提交。
+             */
             message: string;
-            /** Excerpts */
+            /**
+             * Excerpts
+             * @description 查询工具返回的正文片段；保存工具为空。
+             */
             excerpts?: components["schemas"]["DiscussionExcerpt"][];
+            /**
+             * Materials
+             * @description 按需读取的资料内容，省略存储定义元数据。
+             */
+            materials?: components["schemas"]["ContextField"][];
+            /**
+             * Next Offset
+             * @description 还有未返回条目时，使用这个偏移继续读取。
+             */
+            next_offset?: number | null;
+            /**
+             * Affected Scene Ids
+             * @description 本次成功创建或修改的幕 ID，可供后续工具引用。
+             */
+            affected_scene_ids?: string[];
+            /**
+             * Call Id
+             * @default
+             */
+            call_id: string;
+            /**
+             * Arguments Json
+             * @default
+             */
+            arguments_json: string;
         };
-        /** Draft */
+        /**
+         * Draft
+         * @description 待用户确认的一幕正文及事实摘要，不包含字段 schema。
+         */
         Draft: {
-            /** Title */
+            /**
+             * Title
+             * @description 本幕正文标题。
+             */
             title: string;
-            /** Text */
+            /**
+             * Text
+             * @description 完整正文，保留段落和排版。
+             */
             text: string;
-            /** Summary */
+            /**
+             * Summary
+             * @description 只概括正文实际发生事件的摘要。
+             */
             summary: string;
         };
         /** DraftFieldEdit */
@@ -1337,6 +1879,82 @@ export interface components {
              */
             reason: string;
         };
+        /** EditRequest */
+        EditRequest: {
+            /** Version */
+            version: number;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "world" | "characters" | "creation" | "chapters" | "scenes";
+            /**
+             * Target
+             * @default
+             */
+            target: string;
+            entity?: components["schemas"]["EntityInput"] | null;
+            /**
+             * Delete
+             * @default false
+             */
+            delete: boolean;
+            /** Title */
+            title?: string | null;
+        };
+        /** Entity */
+        Entity: {
+            /**
+             * Name
+             * @description 实体名字。
+             */
+            name: string;
+            /**
+             * Type
+             * @description 实体类型，例如 human、location、item、skill、world。
+             * @default human
+             */
+            type: string;
+            /**
+             * Description
+             * @description 描述性资料。
+             */
+            description?: components["schemas"]["Description"][];
+            /**
+             * Special Attributes
+             * @description 需要跟踪的变量。
+             */
+            special_attributes?: components["schemas"]["Attribute"][];
+            /**
+             * Id
+             * @description 程序生成的稳定标识，创建实体时 AI 不填写。
+             */
+            id?: string;
+        };
+        /** EntityInput */
+        EntityInput: {
+            /**
+             * Name
+             * @description 实体名字。
+             */
+            name: string;
+            /**
+             * Type
+             * @description 实体类型，例如 human、location、item、skill、world。
+             * @default human
+             */
+            type: string;
+            /**
+             * Description
+             * @description 描述性资料。
+             */
+            description?: components["schemas"]["Description"][];
+            /**
+             * Special Attributes
+             * @description 需要跟踪的变量。
+             */
+            special_attributes?: components["schemas"]["Attribute"][];
+        };
         /** Entry */
         "Entry-Input": {
             /**
@@ -1390,6 +2008,31 @@ export interface components {
             /** Source Scene Id */
             source_scene_id?: string | null;
             definition?: components["schemas"]["FieldDefinition-Output"] | null;
+        };
+        /** EstimateRequest */
+        EstimateRequest: {
+            /**
+             * Scene Id
+             * @default
+             */
+            scene_id: string;
+            /**
+             * Branch Id
+             * @default
+             */
+            branch_id: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            compression: components["schemas"]["Compression"];
+            /** Prompts */
+            prompts: {
+                [key: string]: string;
+            };
+            /** Context Source */
+            context_source: string;
         };
         /** Event */
         Event: {
@@ -1457,6 +2100,13 @@ export interface components {
             keywords?: string[];
             /** Entries */
             entries?: components["schemas"]["Entry-Output"][];
+        };
+        /** ExportFieldTemplate */
+        ExportFieldTemplate: {
+            /** Version */
+            version: number;
+            /** Name */
+            name: string;
         };
         /**
          * ExportStoryFieldSchemaRequest
@@ -1824,6 +2474,8 @@ export interface components {
         };
         /** GenerateRequest */
         "GenerateRequest-Input": {
+            /** Planned Scene Id */
+            planned_scene_id?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1842,6 +2494,8 @@ export interface components {
         };
         /** GenerateRequest */
         "GenerateRequest-Output": {
+            /** Planned Scene Id */
+            planned_scene_id?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1954,15 +2608,38 @@ export interface components {
             /** Turns */
             turns?: components["schemas"]["Turn"][];
         };
-        /** InterviewResult */
+        /**
+         * InterviewResult
+         * @description 构思访谈的回复与当前提案；不创建正式小说。
+         */
         InterviewResult: {
-            /** Reply */
+            /**
+             * Reply
+             * @description 面向用户的回复或必要的追问。
+             */
             reply: string;
-            /** Checklist */
+            /**
+             * Checklist
+             * @description 标明当前已定义、缺失或允许稍后定义的内容。
+             */
             checklist?: components["schemas"]["CreationField"][];
+            /** @description 依据已知信息整理的当前提案，允许不完整，不虚构用户已确认的设定。 */
             proposal?: components["schemas"]["CreationProposal-Output"] | null;
         };
         JsonValue: unknown;
+        /** NovelCard */
+        NovelCard: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Created */
+            created: boolean;
+            /** Deleted */
+            deleted: boolean;
+            /** Busy */
+            busy: boolean;
+        };
         /** OutlineBeat */
         "OutlineBeat-Input": {
             /**
@@ -2037,6 +2714,22 @@ export interface components {
             /** Thread Id */
             thread_id?: string | null;
         };
+        /** Patch */
+        Patch: {
+            /**
+             * Op
+             * @description JSON Patch 操作。
+             * @enum {string}
+             */
+            op: "add" | "remove" | "replace" | "test";
+            /**
+             * Path
+             * @description 相对目标的 JSON Pointer 路径，使用 ~0/~1 转义。
+             */
+            path: string;
+            /** @description add/replace/test 的值；remove 无需值。 */
+            value?: components["schemas"]["JsonValue"];
+        };
         /** PatchPart */
         PatchPart: {
             /**
@@ -2047,6 +2740,70 @@ export interface components {
             kind: "key" | "item";
             /** Value */
             value: string;
+        };
+        /**
+         * Plan
+         * @description 一幕的剧情计划。计划不是已发生事实，已有幕计划时正文直接复用。
+         */
+        Plan: {
+            /** @description 对已有创作资料的增量修改；无变化时保持空补丁。 */
+            writer_patch?: components["schemas"]["WriterPatch-Output"];
+            /**
+             * Chapter Plan
+             * @description 当前章节的简要安排。
+             */
+            chapter_plan: string;
+            /**
+             * Scene Plan
+             * @description 本幕的核心事件、行动和悬念。
+             */
+            scene_plan: string;
+            /**
+             * Character Names
+             * @description 本幕相关的角色姓名。
+             */
+            character_names: string[];
+            /** @description 确需引入的持续角色及原因；没有则省略。 */
+            new_character?: components["schemas"]["CharacterNeed"] | null;
+            /**
+             * Start New Chapter
+             * @description 是否在本幕开启新章节。
+             * @default false
+             */
+            start_new_chapter: boolean;
+            /**
+             * Chapter Title
+             * @description 开启新章时使用的标题。
+             * @default
+             */
+            chapter_title: string;
+        };
+        /** PlanSceneRequest */
+        PlanSceneRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "plan_scene";
+            /** Instruction */
+            instruction: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Target Id */
+            target_id?: string | null;
+        };
+        /** PlannedScene */
+        PlannedScene: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id?: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Title */
+            title: string;
+            plan: components["schemas"]["Plan"];
         };
         /** PlotThread */
         "PlotThread-Input": {
@@ -2306,6 +3063,41 @@ export interface components {
         /** PromptTemplatePreviewContext */
         PromptTemplatePreviewContext: {
             /**
+             * World Context
+             * @default
+             */
+            world_context: string;
+            /**
+             * Characters Context
+             * @default
+             */
+            characters_context: string;
+            /**
+             * Preferences Context
+             * @default
+             */
+            preferences_context: string;
+            /**
+             * Writer Context
+             * @default
+             */
+            writer_context: string;
+            /**
+             * Scene Plans Context
+             * @default
+             */
+            scene_plans_context: string;
+            /**
+             * Recent Story Context
+             * @default
+             */
+            recent_story_context: string;
+            /**
+             * Task Context
+             * @default
+             */
+            task_context: string;
+            /**
              * Schema Name
              * @default
              */
@@ -2388,11 +3180,13 @@ export interface components {
         };
         /** PromptTemplatePreviewRequest */
         PromptTemplatePreviewRequest: {
+            /** Context Source */
+            context_source?: string | null;
             /**
              * Task
              * @enum {string}
              */
-            task: "planning_decision" | "planning" | "revision_plan" | "character_consultation" | "rewrite_selection" | "writing" | "judge" | "extraction" | "maintenance" | "creation_interview" | "rewrite_snippet" | "scene_summary" | "character_profile" | "character_chat" | "discussion";
+            task: "creation_interview" | "scene_planning" | "writing" | "discussion" | "character_chat";
             /** Source */
             source?: string | null;
             /**
@@ -2408,7 +3202,7 @@ export interface components {
              * Task
              * @enum {string}
              */
-            task: "planning_decision" | "planning" | "revision_plan" | "character_consultation" | "rewrite_selection" | "writing" | "judge" | "extraction" | "maintenance" | "creation_interview" | "rewrite_snippet" | "scene_summary" | "character_profile" | "character_chat" | "discussion";
+            task: "creation_interview" | "scene_planning" | "writing" | "discussion" | "character_chat";
             /**
              * Version Id
              * Format: uuid
@@ -2421,7 +3215,7 @@ export interface components {
              * Task
              * @enum {string}
              */
-            task: "planning_decision" | "planning" | "revision_plan" | "character_consultation" | "rewrite_selection" | "writing" | "judge" | "extraction" | "maintenance" | "creation_interview" | "rewrite_snippet" | "scene_summary" | "character_profile" | "character_chat" | "discussion";
+            task: "creation_interview" | "scene_planning" | "writing" | "discussion" | "character_chat";
             /** Label */
             label: string;
             /** Description */
@@ -2446,6 +3240,11 @@ export interface components {
         /** PromptTemplateVersion */
         PromptTemplateVersion: {
             /**
+             * Context Source
+             * @description 独立的 Jinja2 上下文布局源码；不包含 JSON Schema。
+             */
+            context_source?: string;
+            /**
              * Id
              * Format: uuid
              */
@@ -2464,7 +3263,7 @@ export interface components {
              * Task
              * @enum {string}
              */
-            task: "planning_decision" | "planning" | "revision_plan" | "character_consultation" | "rewrite_selection" | "writing" | "judge" | "extraction" | "maintenance" | "creation_interview" | "rewrite_snippet" | "scene_summary" | "character_profile" | "character_chat" | "discussion";
+            task: "creation_interview" | "scene_planning" | "writing" | "discussion" | "character_chat";
             /** Name */
             name: string;
             /** Version */
@@ -2531,12 +3330,6 @@ export interface components {
         "ReaderPreferences-Output": {
             /** Entries */
             entries?: components["schemas"]["Entry-Output"][];
-            /** Likes */
-            readonly likes: components["schemas"]["Preference-Output"][];
-            /** Dislikes */
-            readonly dislikes: components["schemas"]["Preference-Output"][];
-            /** Custom Fields */
-            readonly custom_fields: components["schemas"]["Entry-Output"][];
         };
         /** RecoverCommandRequest */
         RecoverCommandRequest: {
@@ -2700,6 +3493,15 @@ export interface components {
         };
         /** RewriteProposal */
         RewriteProposal: {
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Updates */
+            updates?: components["schemas"]["StateUpdate"][];
+            /** Materials */
+            materials?: components["schemas"]["EditFieldsRequest-Output"][];
             /**
              * Source Revision Id
              * Format: uuid
@@ -2915,6 +3717,19 @@ export interface components {
              */
             estimated_usage: boolean;
         };
+        /** SaveFieldTemplate */
+        SaveFieldTemplate: {
+            /** Id */
+            id?: string | null;
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
+            /** Name */
+            name: string;
+            fields: components["schemas"]["TemplateFields"];
+        };
         /** SaveFieldTemplateRequest */
         "SaveFieldTemplateRequest-Input": {
             /**
@@ -2958,6 +3773,11 @@ export interface components {
         /** SavePromptTemplateRequest */
         SavePromptTemplateRequest: {
             /**
+             * Context Source
+             * @description 上下文 Jinja2 模板，与行为提示词分别保存。
+             */
+            context_source?: string | null;
+            /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
@@ -2977,7 +3797,7 @@ export interface components {
              * Task
              * @enum {string}
              */
-            task: "planning_decision" | "planning" | "revision_plan" | "character_consultation" | "rewrite_selection" | "writing" | "judge" | "extraction" | "maintenance" | "creation_interview" | "rewrite_snippet" | "scene_summary" | "character_profile" | "character_chat" | "discussion";
+            task: "creation_interview" | "scene_planning" | "writing" | "discussion" | "character_chat";
             /**
              * Name
              * @default 自定义模板
@@ -3034,6 +3854,31 @@ export interface components {
             /** Custom Fields */
             custom_fields?: components["schemas"]["Entry-Output"][];
         };
+        /** SelectSceneBranchRequest */
+        SelectSceneBranchRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "select_scene_branch";
+            /**
+             * Leaf Id
+             * Format: uuid
+             */
+            leaf_id: string;
+        };
+        /** SendRequest */
+        SendRequest: {
+            /** Version */
+            version: number;
+            /**
+             * Scene Id
+             * @default
+             */
+            scene_id: string;
+            /** Message */
+            message: string;
+        };
         /** SetSetupDraftDeletedRequest */
         SetSetupDraftDeletedRequest: {
             /**
@@ -3043,6 +3888,18 @@ export interface components {
             kind: "set_setup_draft_deleted";
             /** Deleted */
             deleted: boolean;
+        };
+        /** SettingsRequest */
+        SettingsRequest: {
+            /** Version */
+            version: number;
+            compression: components["schemas"]["Compression"];
+            /** Prompts */
+            prompts: {
+                [key: string]: string;
+            };
+            /** Context Source */
+            context_source: string;
         };
         /** SetupDraft */
         "SetupDraft-Input": {
@@ -3160,6 +4017,30 @@ export interface components {
             /** Custom Fields */
             custom_fields?: components["schemas"]["Entry-Output"][];
         };
+        /** StageEvent */
+        StageEvent: {
+            /** Id */
+            id?: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "gm" | "role" | "enter" | "leave" | "self_edit";
+            /**
+             * Actor Id
+             * @default
+             */
+            actor_id: string;
+            /** Text */
+            text: string;
+            /** Audience */
+            audience?: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+        };
         /** StartCharacterChatRequest */
         StartCharacterChatRequest: {
             /**
@@ -3196,6 +4077,12 @@ export interface components {
              */
             session_id?: string;
             /**
+             * Mode
+             * @default discussion
+             * @enum {string}
+             */
+            mode: "discussion" | "planning";
+            /**
              * Title
              * @default 新讨论
              */
@@ -3208,6 +4095,34 @@ export interface components {
         /** StatePatch */
         "StatePatch-Output": {
             entries?: components["schemas"]["CollectionPatch_Entry_-Output"];
+        };
+        /** StateUpdate */
+        StateUpdate: {
+            /**
+             * Character Id
+             * Format: uuid
+             * @description 发生变化的既有角色 ID。
+             */
+            character_id: string;
+            /** @description 当前状态字段的实际变化。 */
+            state?: components["schemas"]["StatePatch-Output"];
+            /** @description 正文有明确依据的稳定档案变化。 */
+            profile?: components["schemas"]["ProfilePatch-Output"];
+            /** @description 正文出现的称呼变化。 */
+            aliases?: components["schemas"]["CollectionPatch_Alias_-Output"];
+            /** @description 本幕涉及的其他自定义资料变化。 */
+            custom_fields?: components["schemas"]["CollectionPatch_Entry_-Output"];
+            /**
+             * New Experiences
+             * @description 角色在本幕实际经历的事件。
+             */
+            new_experiences?: components["schemas"]["Experience-Output"][];
+            /**
+             * Reason
+             * @description 变化对应的正文依据。
+             * @default
+             */
+            reason: string;
         };
         /** Story */
         Story: {
@@ -3227,6 +4142,10 @@ export interface components {
             chapters?: components["schemas"]["Chapter"][];
             /** Scenes */
             scenes?: components["schemas"]["Scene"][];
+            /** Planned Scenes */
+            planned_scenes?: components["schemas"]["PlannedScene"][];
+            /** Active Scene Leaf Id */
+            active_scene_leaf_id?: string | null;
             /** Directions */
             directions?: components["schemas"]["Direction"][];
             /** Initial Snapshots */
@@ -3292,6 +4211,209 @@ export interface components {
             story: components["schemas"]["Story"];
             /** Characters At Scenes */
             readonly characters_at_scenes: components["schemas"]["CharacterPresentation"][];
+        };
+        /** StudioBranch */
+        StudioBranch: {
+            /** Id */
+            id?: string;
+            /** Name */
+            name: string;
+            /** Scenes */
+            scenes: components["schemas"]["StudioScene"][];
+            /** Chapters */
+            chapters: components["schemas"]["StudioChapter"][];
+        };
+        /** StudioChapter */
+        StudioChapter: {
+            entity: components["schemas"]["Entity"];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Summary Stale
+             * @default true
+             */
+            summary_stale: boolean;
+            /**
+             * Completed
+             * @default false
+             */
+            completed: boolean;
+        };
+        /** StudioFieldTemplate */
+        StudioFieldTemplate: {
+            /** Id */
+            id?: string;
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
+            /** Name */
+            name: string;
+            fields?: components["schemas"]["TemplateFields"];
+        };
+        /** StudioNovel */
+        StudioNovel: {
+            /** Id */
+            id?: string;
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
+            /**
+             * Title
+             * @default 未命名小说
+             */
+            title: string;
+            /**
+             * Created
+             * @default false
+             */
+            created: boolean;
+            /**
+             * Deleted
+             * @default false
+             */
+            deleted: boolean;
+            /** World */
+            world?: components["schemas"]["Entity"][];
+            /** Characters */
+            characters?: components["schemas"]["Entity"][];
+            /** Creation */
+            creation?: components["schemas"]["Entity"][];
+            template_fields?: components["schemas"]["TemplateFields"];
+            /**
+             * Field Template Name
+             * @default 空白字段
+             */
+            field_template_name: string;
+            /** Chapters */
+            chapters?: components["schemas"]["StudioChapter"][];
+            /** Scenes */
+            scenes?: components["schemas"]["StudioScene"][];
+            /** Branches */
+            branches?: components["schemas"]["StudioBranch"][];
+            /** Creation Messages */
+            creation_messages?: components["schemas"]["ConversationMessage"][];
+            compression?: components["schemas"]["Compression"];
+            /** Prompts */
+            prompts?: {
+                [key: string]: string;
+            };
+            /**
+             * Context Source
+             * @default {{ data | tojson }}
+             */
+            context_source: string;
+            /**
+             * Busy
+             * @default false
+             */
+            busy: boolean;
+            /**
+             * Run Id
+             * @default
+             */
+            run_id: string;
+            /**
+             * Running
+             * @default
+             */
+            running: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Calls
+             * @default 0
+             */
+            calls: number;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
+            turn_checkpoint?: components["schemas"]["TurnCheckpoint"] | null;
+        };
+        /** StudioScene */
+        StudioScene: {
+            entity: components["schemas"]["Entity"];
+            /** Chapter Id */
+            chapter_id: string;
+            /**
+             * Confirmed
+             * @default false
+             */
+            confirmed: boolean;
+            /** Messages */
+            messages?: components["schemas"]["ConversationMessage"][];
+            /** Events */
+            events?: components["schemas"]["StageEvent"][];
+            /** Abandoned */
+            abandoned?: components["schemas"]["StageEvent"][][];
+            /** Settings Patches */
+            settings_patches?: {
+                [key: string]: components["schemas"]["Patch"][];
+            };
+            /** Character Patches */
+            character_patches?: {
+                [key: string]: components["schemas"]["Patch"][];
+            };
+            /** Character Snapshot */
+            character_snapshot?: {
+                [key: string]: components["schemas"]["Entity"];
+            } | null;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+        };
+        /** TemplateFields */
+        TemplateFields: {
+            world?: components["schemas"]["EntityInput"];
+            characters?: components["schemas"]["EntityInput"];
+            creation?: components["schemas"]["EntityInput"];
+            chapters?: components["schemas"]["EntityInput"];
+            scenes?: components["schemas"]["EntityInput"];
+        };
+        /** ToolContract */
+        ToolContract: {
+            /**
+             * Name
+             * @description 模型调用的工具名称。
+             */
+            name: string;
+            /**
+             * Description
+             * @description 用途与调用边界，来自参数模型 description 或显式覆盖。
+             */
+            description: string;
+            /**
+             * Parameters
+             * @description 由 Pydantic 导出的参数 JSON Schema。
+             */
+            parameters: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Returns
+             * @description 由 Pydantic 导出的公开返回值 JSON Schema。
+             */
+            returns: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
         };
         /** Trace */
         Trace: {
@@ -3364,6 +4486,53 @@ export interface components {
             role: "user" | "assistant";
             /** Content */
             content: string;
+        };
+        /** TurnCheckpoint */
+        TurnCheckpoint: {
+            /**
+             * Scene Id
+             * @default
+             */
+            scene_id: string;
+            /** Message Id */
+            message_id: string;
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
+            /** Before */
+            before: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /** TurnRequest */
+        TurnRequest: {
+            /** Version */
+            version: number;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "retry" | "edit" | "withdraw";
+            /**
+             * Scene Id
+             * @default
+             */
+            scene_id: string;
+            /** Message Id */
+            message_id: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Preserve State
+             * @description 仅用于无检查点旧消息：明确同意保留当前资料和演绎，只替换或撤回聊天记录。
+             * @default false
+             */
+            preserve_state: boolean;
         };
         /** UndoRequest */
         UndoRequest: {
@@ -3487,6 +4656,11 @@ export interface components {
             path?: components["schemas"]["PatchPart"][];
             value?: components["schemas"]["JsonValue"];
         };
+        /**
+         * Visibility
+         * @enum {integer}
+         */
+        Visibility: 0 | 1 | 2;
         /** WorkingDraft */
         "WorkingDraft-Input": {
             /**
@@ -3590,8 +4764,6 @@ export interface components {
         "WorldSetting-Output": {
             /** Entries */
             entries?: components["schemas"]["Entry-Output"][];
-            /** Premise */
-            readonly premise: string;
         };
         /** WriterNote */
         "WriterNote-Input": {
@@ -3687,26 +4859,6 @@ export interface components {
         WriterWorkspace: {
             /** Entries */
             entries?: components["schemas"]["Entry-Output"][];
-            /** Mainlines */
-            readonly mainlines: components["schemas"]["PlotThread-Output"][];
-            /** Subplots */
-            readonly subplots: components["schemas"]["PlotThread-Output"][];
-            /** Foreshadows */
-            readonly foreshadows: components["schemas"]["Foreshadow-Output"][];
-            /** Outline */
-            readonly outline: components["schemas"]["OutlineBeat-Output"][];
-            /** Future Directions */
-            readonly future_directions: components["schemas"]["PlotThread-Output"][];
-            /** Notes */
-            readonly notes: components["schemas"]["WriterNote-Output"][];
-            /** Drafts */
-            readonly drafts: components["schemas"]["WorkingDraft-Output"][];
-            /** Progress */
-            readonly progress: string;
-            /** Current User Intent */
-            readonly current_user_intent: string;
-            /** Custom Fields */
-            readonly custom_fields: components["schemas"]["Entry-Output"][];
         };
         /** WritingDraft */
         WritingDraft: {
@@ -3734,6 +4886,531 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    contracts_api_studio_contracts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    novels_api_studio_novels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NovelCard"][];
+                };
+            };
+        };
+    };
+    create_api_studio_novels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+        };
+    };
+    templates_api_studio_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioFieldTemplate"][];
+                };
+            };
+        };
+    };
+    save_template_api_studio_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveFieldTemplate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioFieldTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_template_api_studio_templates__key__delete: {
+        parameters: {
+            query: {
+                version: number;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_template_api_studio_novels__key__template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyFieldTemplate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_template_api_studio_novels__key__template_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportFieldTemplate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioFieldTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    novel_api_studio_novels__key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_api_studio_novels__key__delete: {
+        parameters: {
+            query: {
+                version: number;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    message_api_studio_novels__key__message_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    turn_api_studio_novels__key__turn_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    control_api_studio_novels__key__control_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_api_studio_novels__key__edit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_settings_api_studio_novels__key__settings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_api_studio_novels__key__preview_get: {
+        parameters: {
+            query?: {
+                scene_id?: string;
+                message?: string;
+                branch_id?: string;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_edits_api_studio_novels__key__estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EstimateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     field_templates_api_field_templates_get: {
         parameters: {
             query?: never;
@@ -4128,6 +5805,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_contracts_api_ai_contracts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIContractCatalog"];
                 };
             };
         };

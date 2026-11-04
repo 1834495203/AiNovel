@@ -1,0 +1,42 @@
+const {test}=require('node:test');
+const {assert,baseURL,setup,create,send,choose,removeNovel,closeDrawer}=require('./studio_browser_helpers.cjs');
+test('responsive template editing, independent initialization and export',{skip:process.env.AINOVEL_STUDIO_BROWSER!=='1'},async()=>{
+ const {browser,page,errors}=await setup(1440,1000);let id;const name='界面模板-'+Date.now();
+ try{
+  await page.locator('.header-actions').getByRole('button',{name:'字段模板',exact:true}).click();
+  let drawer=page.locator('.n-drawer:visible');
+  await drawer.getByRole('button',{name:'新增模板',exact:true}).click();
+  await drawer.getByRole('textbox',{name:'模板名字'}).fill(name);
+  await drawer.getByRole('button',{name:'添加描述',exact:true}).click();
+  await drawer.getByRole('textbox',{name:'描述名称'}).fill('世界规则');
+  await drawer.getByRole('textbox',{name:'描述内容'}).fill('模板世界');
+  await drawer.getByRole('button',{name:'保存模板',exact:true}).click();
+  await page.getByText('模板已保存，已有小说不受影响',{exact:true}).waitFor();
+  await page.screenshot({path:'.tmp/new-template-drawer.png'});
+  await closeDrawer(page);id=await create(page);
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'模板',exact:true}).click();drawer=page.locator('.n-drawer:visible');
+  await choose(page,drawer.locator('.template-picker .n-select'),name);
+  await drawer.getByRole('button',{name:'用于当前构思',exact:true}).click();
+  await drawer.waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'设定',exact:true}).click();
+  await page.locator('.entity-cards .n-collapse-item__header').first().click();
+  await page.getByText('模板世界',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'编辑',exact:true}).click();
+  const modal=page.locator('.entity-modal');
+  await modal.locator('.field-collapse .n-collapse-item__header').first().click();
+  await modal.getByRole('textbox',{name:'描述内容'}).fill('本书自己的世界');
+  await modal.getByRole('button',{name:'保存资料',exact:true}).click();await modal.waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'对话',exact:true}).click();await send(page,'继续整理这本灯塔小说的构思。');
+  await page.getByRole('button',{name:'模板',exact:true}).click();drawer=page.locator('.n-drawer:visible');
+  await drawer.getByRole('button',{name:'本书另存为模板',exact:true}).click();
+  await page.getByRole('textbox',{name:'新模板名字'}).fill(name+'-本书');
+  await page.getByRole('button',{name:'另存为新模板',exact:true}).click();
+  await page.getByText('已另存为新模板',{exact:true}).waitFor();
+  const library=await fetch(baseURL+'/api/studio/templates').then(r=>r.json());
+  assert.deepEqual(library.find(t=>t.name===name).fields.world.description[0].value,['模板世界']);
+  assert.deepEqual(library.find(t=>t.name===name+'-本书').fields.world.description[0].value,['本书自己的世界']);
+  await page.screenshot({path:'.tmp/mobile-new-template.png'});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);assert.deepEqual(errors,[]);
+ }finally{await removeNovel(id);const all=await fetch(baseURL+'/api/studio/templates').then(r=>r.json());for(const t of all)if(t.name.startsWith(name))await fetch(baseURL+'/api/studio/templates/'+t.id+'?version='+t.version,{method:'DELETE'});await browser.close()}
+});

@@ -1,6 +1,8 @@
+
 from uuid import uuid4
 
 import pytest
+from configured_fields import make_world
 
 from ainovel.core.config import Settings
 from ainovel.core.discussion import DiscussionRequest, DiscussionResult
@@ -9,9 +11,9 @@ from ainovel.core.domain import (
     CommandOutput,
     CommandSubmission,
     CreateStoryRequest,
+    CreationProposal,
     Scene,
     Story,
-    StorySetup,
     UndoRequest,
 )
 from ainovel.core.fields import FieldTarget
@@ -31,9 +33,9 @@ async def test_readonly_conversation_undo_preserves_other_sessions_and_newer_sto
             row = await session.get(CommandRow, submission.id)
             row.status = "running"
     try:
-        create = CommandSubmission(payload=CreateStoryRequest(confirmed=True, proposal=StorySetup(title="测试", world="城市")))
+        create = CommandSubmission(payload=CreateStoryRequest(confirmed=True, proposal=CreationProposal(title="测试", world=make_world('城市'))))
         await start(create)
-        story = Story(title="测试", world="城市")
+        story = Story(title="测试", world=make_world('城市'))
         first = await store.commit(create, story, "创建", [], [])
         chats = []
         for session_id in (uuid4(), uuid4()):
@@ -76,27 +78,6 @@ def test_committed_scene_and_chapter_fields_are_locked():
     assert scene.custom_fields == [] and chapter.custom_fields == []
 
 
-async def test_text_only_regeneration_cannot_ask_model_to_replan():
-    from ainovel.core.domain import DraftReviewResponse, Plan, WorkflowState
-    from ainovel.service.workflow import NarrativeWorkflow
-
-    class RejectPlanner:
-        async def generate(self, *args, **kwargs):
-            raise AssertionError("仅文本重生成不能调用规划模型")
-    workflow = object.__new__(NarrativeWorkflow)
-    workflow.model = RejectPlanner()
-    async def step(*args):
-        pass
-    async def saved(state, *args):
-        return state
-    workflow.step, workflow.saved = step, saved
-    original = Plan(chapter_plan="保留章节安排", scene_plan="保留本幕设定", character_names=[])
-    state = WorkflowState(command_id=uuid4(), story=Story(title="测试"), instruction="原始要求",
-        plan=original, text_only_revision=True,
-        feedback=DraftReviewResponse(decision="revise", execution_command_id=uuid4(), feedback="重生成正文", text_only=True))
-    result = await workflow.rewrite_plan(state)
-    assert result.plan == original
-    assert not result.revision_plan.replan and result.revision_plan.new_character is None
 
 
 async def test_readonly_discussion_can_finish_when_writing_advances(monkeypatch):
@@ -120,7 +101,7 @@ async def test_readonly_discussion_can_finish_when_writing_advances(monkeypatch)
         return ReplyAction(reply="基于本轮读取的状态给出建议")
     monkeypatch.setattr(discussion.DiscussionRepository, "history", history)
     monkeypatch.setattr(discussion, "resolve_command_template", template)
-    services = SimpleNamespace(store=SimpleNamespace(head=head), model=SimpleNamespace(choose_discussion_tool=choose),
+    services = SimpleNamespace(store=SimpleNamespace(head=head), model=SimpleNamespace(choose_agent_tool=choose),
         settings=Settings(_env_file=None))
     request = DiscussionRequest(session_id=uuid4(), message="讨论后续")
     result = await discussion.DiscussionHandler(services).turn(CommandSubmission(

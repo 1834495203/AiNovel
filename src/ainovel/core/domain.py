@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from pydantic import AliasChoices, Field, computed_field, model_validator
+from pydantic import Field, JsonValue, computed_field, model_validator
 
 from ainovel.core.base import Model
 from ainovel.core.characters import (
@@ -19,6 +19,7 @@ from ainovel.core.characters import (
     Snapshot,
     StatePatch,
 )
+from ainovel.core.context_layout import default_context_source
 from ainovel.core.discussion import (
     DiscussionRequest,
     DiscussionResult,
@@ -39,7 +40,6 @@ from ainovel.core.records import (
     CollectionPatch,
     CustomField,
     Entry,
-    OutlineBeat,
     ReaderPreferences,
     StoryMetadataPatch,
     WorldSetting,
@@ -94,20 +94,6 @@ class CreationProposal(Model):
     preferences: ReaderPreferences = Field(default_factory=ReaderPreferences)
     custom_fields: list[CustomField] = Field(default_factory=list)
 
-    @model_validator(mode="before")
-    @classmethod
-    def legacy_proposal(cls, value: object) -> object:
-        if isinstance(value, dict):
-            result = value.copy()
-            if isinstance(result.get("preferences"), list):
-                result["preferences"] = {
-                    "likes": result["preferences"],
-                    "dislikes": result.pop("dislikes", []),
-                }
-            elif "dislikes" in result:
-                result["preferences"] = {"dislikes": result.pop("dislikes")}
-            return result
-        return value
 
     @model_validator(mode="after")
     def unique_names(self) -> "CreationProposal":
@@ -117,8 +103,25 @@ class CreationProposal(Model):
         return self
 
 
-# Compatibility for older external request constructors, never serialized in canonical Story.
-StorySetup = CreationProposal
+
+
+class PlannedScene(Model):
+    id: UUID = Field(default_factory=uuid4)
+    parent_id: UUID | None = None
+    title: str = Field(min_length=1, max_length=200)
+    plan: "Plan"
+
+
+class PlanSceneRequest(Model):
+    kind: Literal["plan_scene"] = "plan_scene"
+    instruction: str = Field(min_length=1, max_length=8000)
+    parent_id: UUID | None = None
+    target_id: UUID | None = None
+
+
+class SelectSceneBranchRequest(Model):
+    kind: Literal["select_scene_branch"] = "select_scene_branch"
+    leaf_id: UUID
 
 
 class Story(Model):
@@ -130,81 +133,13 @@ class Story(Model):
     characters: list[Character] = Field(default_factory=list)
     chapters: list[Chapter] = Field(default_factory=list)
     scenes: list[Scene] = Field(default_factory=list)
+    planned_scenes: list[PlannedScene] = Field(default_factory=list)
+    active_scene_leaf_id: UUID | None = None
     directions: list[Direction] = Field(default_factory=list)
     initial_snapshots: list[Snapshot] = Field(default_factory=list)
     custom_fields: list[CustomField] = Field(default_factory=list)
     field_template_set: FieldTemplateSet | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def decode_legacy_story(cls, value: object) -> object:
-        # Untyped JSON exists only at this old-format decoding boundary.
-        if not isinstance(value, dict):
-            return value
-        data = value.copy()
-        setup = data.pop("setup", None)
-        if setup is not None:
-            proposal = (
-                setup if isinstance(setup, CreationProposal) else CreationProposal.model_validate(setup)
-            )
-            data.setdefault("title", proposal.title)
-            data.setdefault("world", proposal.world)
-            data.setdefault("preferences", proposal.preferences)
-            data.setdefault("custom_fields", proposal.custom_fields)
-        outline = data.pop("outline", None)
-        if outline is not None and "writer" not in data:
-            data["writer"] = WriterWorkspace(outline=[OutlineBeat.model_validate(item) for item in outline])
-        characters = [
-            item if isinstance(item, Character) else Character.model_validate(item)
-            for item in data.get("characters", [])
-        ]
-        baselines = [
-            item if isinstance(item, Snapshot) else Snapshot.model_validate(item)
-            for item in data.get("initial_snapshots", [])
-        ]
-        for snapshot in baselines:
-            character = next((item for item in characters if item.id == snapshot.character_id), None)
-            if character and snapshot.profile == Profile():
-                snapshot.profile = character.profile.model_copy(deep=True)
-                snapshot.aliases = character.aliases
-        converted = []
-        history = [item.model_copy(deep=True) for item in baselines]
-        for raw_scene in data.get("scenes", []):
-            if isinstance(raw_scene, Scene):
-                converted.append(raw_scene)
-                continue
-            scene = raw_scene.copy()
-            legacy = scene.pop("snapshots", [])
-            patches = [
-                item if isinstance(item, CharacterPatch) else CharacterPatch.model_validate(item)
-                for item in scene.get("character_patches", [])
-            ]
-            for item in legacy:
-                snapshot = item if isinstance(item, Snapshot) else Snapshot.model_validate(item)
-                previous = next(
-                    (item for item in reversed(history) if item.character_id == snapshot.character_id),
-                    Snapshot(character_id=snapshot.character_id),
-                )
-                patches.append(
-                    CharacterPatch(
-                        id=snapshot.id,
-                        character_id=snapshot.character_id,
-                        scene_id=scene["id"],
-                        state=StatePatch.between(previous.state, snapshot.state),
-                        new_experiences=[
-                            event
-                            for event in snapshot.experiences
-                            if not any(old.id == event.id for old in previous.experiences)
-                        ],
-                        reason="旧完整快照转为增量",
-                    )
-                )
-                history.append(snapshot)
-            scene["character_patches"] = patches
-            converted.append(scene)
-        data["scenes"] = converted
-        data["initial_snapshots"] = baselines
-        return data
 
     def snapshot(self, character_id: UUID, scene_id: UUID | None = None) -> Snapshot:
         limit = len(self.scenes)
@@ -267,7 +202,7 @@ class SetupDraft(Model):
     input_text: str = Field(default="", max_length=8000)
     pending_input: str = Field(default="", max_length=8000)
     proposal: CreationProposal | None = Field(
-        default=None, validation_alias=AliasChoices("proposal", "setup")
+        default=None
     )
     editing_setup: bool = False
     edits: list[DraftFieldEdit] = Field(default_factory=list)
@@ -294,13 +229,14 @@ class SetSetupDraftDeletedRequest(Model):
 
 class CreateStoryRequest(Model):
     kind: Literal["create_story"] = "create_story"
-    proposal: CreationProposal = Field(validation_alias=AliasChoices("proposal", "setup"))
+    proposal: CreationProposal
     confirmed: Literal[True]
     field_template_ids: list[UUID] = Field(default_factory=list)
     field_template_set_id: UUID | None = None
 
 
 class GenerateRequest(Model):
+    planned_scene_id: UUID | None = None
     kind: Literal["generate"] = "generate"
     instruction: str = Field(min_length=1, max_length=8000)
     prompt_templates: list["PromptTemplateSelection"] = Field(default_factory=list, max_length=15)
@@ -308,40 +244,8 @@ class GenerateRequest(Model):
     new_chapter: bool = Field(default=False, exclude=True, deprecated=True)
 
 
-PromptTask = Literal[
-    "planning_decision",
-    "planning",
-    "revision_plan",
-    "character_consultation",
-    "rewrite_selection",
-    "writing",
-    "judge",
-    "extraction",
-    "maintenance",
-    "creation_interview",
-    "rewrite_snippet",
-    "scene_summary",
-    "character_profile",
-    "character_chat",
-    "discussion",
-]
-PROMPT_TASKS: tuple[PromptTask, ...] = (
-    "planning_decision",
-    "planning",
-    "revision_plan",
-    "character_consultation",
-    "rewrite_selection",
-    "writing",
-    "judge",
-    "extraction",
-    "maintenance",
-    "creation_interview",
-    "rewrite_snippet",
-    "scene_summary",
-    "character_profile",
-    "character_chat",
-    "discussion",
-)
+PromptTask = Literal["creation_interview", "scene_planning", "writing", "discussion", "character_chat"]
+PROMPT_TASKS: tuple[PromptTask, ...] = ("creation_interview", "scene_planning", "writing", "discussion", "character_chat")
 
 
 class PromptContextVariable(Model):
@@ -351,6 +255,7 @@ class PromptContextVariable(Model):
 
 
 class PromptTemplateVersion(Model):
+    context_source: str = Field(default_factory=default_context_source, max_length=12000, description="独立的 Jinja2 上下文布局源码；不包含 JSON Schema。")
     id: UUID
     scope: Literal["global", "story"]
     scope_id: UUID
@@ -381,6 +286,7 @@ class PromptTemplateSelection(Model):
 
 
 class SavePromptTemplateRequest(Model):
+    context_source: str | None = Field(default=None, max_length=12000, description="上下文 Jinja2 模板，与行为提示词分别保存。")
     kind: Literal["save_prompt_template"] = "save_prompt_template"
     action: Literal["save", "reset"] = "save"
     scope: Literal["global", "story"]
@@ -409,6 +315,14 @@ class PromptTemplateLibrary(Model):
 
 
 class PromptTemplatePreviewContext(Model):
+    world_context: str = ""
+    characters_context: str = ""
+    preferences_context: str = ""
+    writer_context: str = ""
+    scene_plans_context: str = ""
+    recent_story_context: str = ""
+    task_context: str = ""
+
     schema_name: str = ""
     story_title: str = ""
     instruction: str = ""
@@ -433,6 +347,7 @@ class PromptPreviewMessage(Model):
 
 
 class PromptTemplatePreviewRequest(Model):
+    context_source: str | None = Field(default=None, max_length=12000)
     task: PromptTask
     source: str | None = Field(default=None, max_length=25000)
     guidance: str = Field(default="", max_length=4000)
@@ -625,6 +540,8 @@ Request = Annotated[
     | RecoverCommandRequest
     | SaveSetupDraftRequest
     | SetSetupDraftDeletedRequest
+    | PlanSceneRequest
+    | SelectSceneBranchRequest
     | UpdateStoryRequest
     | ReviewDraftRequest
     | SavePromptTemplateRequest
@@ -648,6 +565,8 @@ class CommandSubmission(Model):
 
     @property
     def operation_scope_id(self) -> UUID:
+        if self.payload.kind in ("discussion", "start_discussion") and self.payload.mode == "planning":
+            return self.story_id or self.payload.session_id
         if self.payload.kind in ("discussion", "start_discussion", "character_chat", "start_character_chat"):
             return self.payload.session_id
         if self.payload.kind == "undo" and self.payload.scope_id:
@@ -692,16 +611,15 @@ class CommandSubmission(Model):
 
 
 class InterviewResult(Model):
-    reply: str
-    checklist: list[CreationField] = Field(default_factory=list)
-    proposal: CreationProposal | None = Field(
-        default=None, validation_alias=AliasChoices("proposal", "setup")
-    )
+    """构思访谈的回复与当前提案；不创建正式小说。"""
+    reply: str = Field(description="面向用户的回复或必要的追问。")
+    checklist: list[CreationField] = Field(default_factory=list, description="标明当前已定义、缺失或允许稍后定义的内容。")
+    proposal: CreationProposal | None = Field(default=None, description="依据已知信息整理的当前提案，允许不完整，不虚构用户已确认的设定。")
 
 
 class Intent(Model):
     goal: str
-    route: Literal["fast", "deliberate"] = "deliberate"
+    route: Literal["fast", "deliberate"] = Field(default="deliberate", description="内部执行路线：fast 复用既有计划；deliberate 用于首次规划或重大方向变化，不是小说自定义字段。")
     route_reason: str = ""
     constraints: list[str] = Field(default_factory=list)
     use_retrieval: bool = True
@@ -711,69 +629,34 @@ class Intent(Model):
 
 
 class CharacterNeed(Model):
-    name: str
-    role: str
-    reason: str
+    name: str = Field(description='拟引入人物的姓名。')
+    role: str = Field(description='人物在故事中的作用。')
+    reason: str = Field(description='本幕为何需要这个持续角色。')
 
 
 class Plan(Model):
-    writer_patch: WriterPatch = Field(default_factory=WriterPatch)
-    chapter_plan: str
-    scene_plan: str
-    character_names: list[str]
-    new_character: CharacterNeed | None = None
-    start_new_chapter: bool = False
-    chapter_title: str = ""
+    """一幕的剧情计划。计划不是已发生事实，已有幕计划时正文直接复用。"""
+    writer_patch: WriterPatch = Field(default_factory=WriterPatch, description='对已有创作资料的增量修改；无变化时保持空补丁。')
+    chapter_plan: str = Field(description='当前章节的简要安排。')
+    scene_plan: str = Field(description='本幕的核心事件、行动和悬念。')
+    character_names: list[str] = Field(description='本幕相关的角色姓名。')
+    new_character: CharacterNeed | None = Field(default=None, description='确需引入的持续角色及原因；没有则省略。')
+    start_new_chapter: bool = Field(default=False, description='是否在本幕开启新章节。')
+    chapter_title: str = Field(default="", description='开启新章时使用的标题。')
 
-    @model_validator(mode="before")
-    @classmethod
-    def read_legacy_plan(cls, value: object) -> object:
-        if isinstance(value, dict) and "story_arc" in value:
-            result = value.copy()
-            arc = result.pop("story_arc")
-            result.setdefault(
-                "writer_patch",
-                WriterPatch(
-                    outline=CollectionPatch[OutlineBeat](
-                        upsert=[OutlineBeat.model_validate(item) for item in arc]
-                    )
-                ),
-            )
-            return result
-        return value
 
 
 class Consultation(Model):
     character_id: UUID
     entries: list[Entry] = Field(default_factory=list)
 
-    @model_validator(mode="before")
-    @classmethod
-    def legacy_answers(cls, value: object) -> object:
-        from ainovel.core.legacy import LegacyField, migrate_entries
-
-        fields = tuple(
-            LegacyField(name=name, label=label, kind="replace")
-            for name, label in (
-                ("immediate_emotion", "当时的感受"),
-                ("interpretation", "当时的理解"),
-                ("internal_thoughts", "想说的事"),
-                ("external_response", "口头回应"),
-                ("intended_action", "行动打算"),
-                ("forbidden_actions", "不愿做的事"),
-                ("opinion_changes", "看法变化"),
-                ("short_term_goals", "近期打算"),
-                ("long_term_goals", "长远打算"),
-                ("relationship_changes", "对他人的态度"),
-            )
-        )
-        return migrate_entries(value, fields, "consultation")
 
 
 class Draft(Model):
-    title: str
-    text: str = Field(min_length=1)
-    summary: str
+    """待用户确认的一幕正文及事实摘要，不包含字段 schema。"""
+    title: str = Field(description="本幕正文标题。")
+    text: str = Field(min_length=1, description="完整正文，保留段落和排版。")
+    summary: str = Field(description="只概括正文实际发生事件的摘要。")
 
 
 class WritingDraft(Model):
@@ -813,12 +696,13 @@ class Issue(Model):
 
 
 class JudgeResult(Model):
-    user_intent_satisfied: bool
-    direction_satisfied: bool
-    issues: list[Issue]
-    overall_score: float = Field(ge=0, le=10)
-    should_rewrite: bool
-    rewrite_instructions: list[str]
+    """草稿审阅结果；格式由本协议定义，不要求小说拥有任何固定资料字段。"""
+    user_intent_satisfied: bool = Field(description="是否满足本次用户要求。")
+    direction_satisfied: bool = Field(description="是否遵守当前有效的创作约束。")
+    issues: list[Issue] = Field(description="具体问题；没有问题时为空。")
+    overall_score: float = Field(ge=0, le=10, description="本轮草稿质量评分。")
+    should_rewrite: bool = Field(description="是否需要修订；违反硬约束或存在严重事实冲突时必须为真。")
+    rewrite_instructions: list[str] = Field(description="可执行的正文修改建议；没有必要修改时为空。")
 
     @property
     def blocked(self) -> bool:
@@ -831,37 +715,28 @@ class JudgeResult(Model):
 
 
 class StateUpdate(Model):
-    character_id: UUID
-    state: StatePatch = Field(default_factory=StatePatch)
-    profile: "ProfilePatch" = Field(default_factory=lambda: ProfilePatch())
-    aliases: "CollectionPatch[Alias]" = Field(default_factory=lambda: CollectionPatch[Alias]())
+    character_id: UUID = Field(description='发生变化的既有角色 ID。')
+    state: StatePatch = Field(default_factory=StatePatch, description='当前状态字段的实际变化。')
+    profile: "ProfilePatch" = Field(default_factory=lambda: ProfilePatch(), description='正文有明确依据的稳定档案变化。')
+    aliases: "CollectionPatch[Alias]" = Field(default_factory=lambda: CollectionPatch[Alias](), description='正文出现的称呼变化。')
     custom_fields: "CollectionPatch[CustomField]" = Field(
         default_factory=lambda: CollectionPatch[CustomField]()
-    )
-    new_experiences: list[Experience] = Field(default_factory=list)
-    reason: str = ""
+    , description='本幕涉及的其他自定义资料变化。')
+    new_experiences: list[Experience] = Field(default_factory=list, description='角色在本幕实际经历的事件。')
+    reason: str = Field(default="", description='变化对应的正文依据。')
 
-    @model_validator(mode="before")
-    @classmethod
-    def read_legacy_extraction(cls, value: object) -> object:
-        if isinstance(value, dict) and isinstance(value.get("state"), dict):
-            state = value["state"]
-            if any(
-                isinstance(state.get(name), list)
-                for name in ("knowledge", "beliefs", "opinions", "short_term_goals", "long_term_goals")
-            ):
-                result = value.copy()
-                result["state"] = StatePatch.between(CharacterState(), CharacterState.model_validate(state))
-                return result
-        return value
 
 
 class Extraction(Model):
-    updates: list[StateUpdate]
+    """依据最终确认正文提取的角色变化；不把规划视为事实。"""
+    updates: list[StateUpdate] = Field(description='依据最终正文提取的逐角色变化。')
     decision_summary: str = Field(default="", description="可选的事实提取说明；遗漏不影响角色变化数据的校验")
 
 
 class RewriteProposal(Model):
+    summary: str = ""
+    updates: list[StateUpdate] = Field(default_factory=list)
+    materials: list[EditFieldsRequest] = Field(default_factory=list)
     source_revision_id: UUID
     scene_id: UUID | None = None
     chapter_id: UUID | None = None
@@ -873,10 +748,11 @@ class RewriteProposal(Model):
 
 
 class ChatResult(Model):
-    session_id: UUID
-    snapshot_id: UUID
-    reply: str
-    canon: Literal[False] = False
+    """不修改正文的角色访谈结果。"""
+    session_id: UUID = Field(description="原样返回输入中的会话标识。")
+    snapshot_id: UUID = Field(description="原样返回本次访谈所用的人物阶段快照标识。")
+    reply: str = Field(description="符合该人物阶段知识和说话方式的回答。")
+    canon: Literal[False] = Field(default=False, description="访谈不属于正式正文事实，恒为假。")
 
 
 class CommandOutput(Model):
@@ -922,7 +798,11 @@ class NarrativeContext(Model):
     directions: list[Direction] = Field(default_factory=list)
 
 
-class WorkflowState(Model):
+class WritingState(Model):
+    source_revision_id: UUID | None = None
+    agent_results: list[dict[str, JsonValue]] = Field(default_factory=list)
+    proposed_material_changes: list["EditFieldsRequest"] = Field(default_factory=list)
+    planned_scene_id: UUID | None = None
     text_only_revision: bool = False
     command_id: UUID
     story: Story
@@ -943,7 +823,6 @@ class WorkflowState(Model):
     maintenance: StoryMaintenance | None = None
     maintenance_checked: bool = False
     stage_maintenance_due: bool | None = None
-    graph_checkpoint_id: str | None = None
     approval_response: ApprovalResponse | None = None
     execution_command_id: UUID | None = None
     draft_version: int = 0
@@ -1025,7 +904,7 @@ class CommandMemento(Model):
     command_id: UUID
     status: Literal["queued", "running", "waiting", "completed", "failed"]
     output: CommandOutput
-    checkpoint: WorkflowState | None = None
+    checkpoint: WritingState | None = None
     checkpoint_raw: str | None = None
     error: str | None = None
     undone_at: datetime | None = None

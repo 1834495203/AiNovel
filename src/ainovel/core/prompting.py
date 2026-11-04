@@ -8,16 +8,17 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ainovel.core.base import Model
+from ainovel.core.context_layout import SECTIONS, default_context_source
 from ainovel.core.discussion import DiscussionContext
 from ainovel.core.domain import (
     PromptContextVariable,
     PromptTask,
     PromptTemplatePreviewContext,
     PromptTemplateVersion,
-    WorkflowState,
+    WritingState,
 )
 
 
@@ -35,6 +36,13 @@ class PromptMetadata(Model):
 class PromptRuntimeContext(Model):
     """Only explicitly projected values may be referenced by prompt source."""
 
+    world_context: str = Field(default="", description="已填写的世界规则和资料，JSON 文本。")
+    characters_context: str = Field(default="", description="相关人物档案和当前状态，JSON 文本。")
+    preferences_context: str = Field(default="", description="用户已填写的写作偏好，JSON 文本。")
+    writer_context: str = Field(default="", description="已有创作资料，不自动生成固定字段。")
+    scene_plans_context: str = Field(default="", description="幕计划及路线 ID，JSON 文本。")
+    recent_story_context: str = Field(default="", description="近期已确认正文或摘要，JSON 文本。")
+    task_context: str = Field(default="", description="本次任务的请求、草稿或修改意见，JSON 文本。")
     schema_name: str = ""
     story_title: str = ""
     instruction: str = ""
@@ -55,7 +63,7 @@ class PromptRuntimeContext(Model):
     @classmethod
     def from_input(cls, schema_name: str, context: BaseModel) -> PromptRuntimeContext:
         result = cls(schema_name=schema_name)
-        if isinstance(context, WorkflowState):
+        if isinstance(context, WritingState):
             result.story_title = context.story.title
             result.instruction = context.instruction
             result.feedback = context.feedback.feedback if context.feedback else ""
@@ -74,6 +82,7 @@ class PromptRuntimeContext(Model):
             elif context.story.scenes:
                 result.current_scene_summary = context.story.scenes[-1].summary
         elif isinstance(context, DiscussionContext):
+            result.first_creation = not context.story.recent_scenes
             result.story_title = context.story.title
             result.discussion_message = context.message
             result.conversation_history = "\n".join(
@@ -144,97 +153,13 @@ class RenderedPrompt(Model):
 
 
 PROMPT_METADATA: tuple[PromptMetadata, ...] = (
-    PromptMetadata(
-        task="planning_decision",
-        label="意图判断与路线规划",
-        description="判断目标、路线、召回与角色访谈。",
-        template_path="prompts/planning_decision.j2",
-    ),
-    PromptMetadata(
-        task="planning",
-        label="场景规划",
-        description="规划本章和场景，并维护后续计划。",
-        template_path="prompts/planning.j2",
-    ),
-    PromptMetadata(
-        task="revision_plan",
-        label="草稿重写规划",
-        description="分析修改范围、相关角色和重写策略。",
-        template_path="prompts/revision_plan.j2",
-    ),
-    PromptMetadata(
-        task="character_consultation",
-        label="角色访谈",
-        description="按当前阶段角色的知识与意图回应情境。",
-        template_path="prompts/character_consultation.j2",
-    ),
-    PromptMetadata(
-        task="rewrite_selection",
-        label="选区改写",
-        description="只改写指定文本，并保留其他正文。",
-        template_path="prompts/rewrite_selection.j2",
-    ),
-    PromptMetadata(
-        task="writing",
-        label="正文生成",
-        description="依据要求、资料和规划写作正文。",
-        template_path="prompts/writing.j2",
-    ),
-    PromptMetadata(
-        task="judge",
-        label="草稿审阅",
-        description="检查要求、连续性、人物和文风。",
-        template_path="prompts/judge.j2",
-    ),
-    PromptMetadata(
-        task="extraction",
-        label="事实与记忆提取",
-        description="从最终正文提取事实、角色状态与经历。",
-        template_path="prompts/extraction.j2",
-    ),
-    PromptMetadata(
-        task="maintenance",
-        label="长期资料维护",
-        description="维护世界设定、偏好、剧情计划和笔记。",
-        template_path="prompts/maintenance.j2",
-    ),
-    PromptMetadata(
-        task="creation_interview",
-        label="新故事构思访谈",
-        description="通过对话整理世界观、角色和写作偏好。",
-        template_path="prompts/creation_interview.j2",
-    ),
-    PromptMetadata(
-        task="rewrite_snippet",
-        label="正文选区改写",
-        description="依据备注改写已选中的正文片段。",
-        template_path="prompts/rewrite_snippet.j2",
-    ),
-    PromptMetadata(
-        task="scene_summary",
-        label="正文事实摘要",
-        description="简短概括正文中实际发生的事件。",
-        template_path="prompts/scene_summary.j2",
-    ),
-    PromptMetadata(
-        task="character_profile",
-        label="新角色档案",
-        description="创建待用户检查的新角色档案。",
-        template_path="prompts/character_profile.j2",
-    ),
-    PromptMetadata(
-        task="character_chat",
-        label="角色采访",
-        description="扮演当前阶段角色进行非正文交流。",
-        template_path="prompts/character_chat.j2",
-    ),
-    PromptMetadata(
-        task="discussion",
-        label="故事讨论",
-        description="讨论故事资料并按明确授权保存变更。",
-        template_path="prompts/discussion.j2",
-    ),
+    PromptMetadata(task="creation_interview",label="创建小说",description="交流构思并提交初始提案。",template_path="prompts/creation_interview.j2"),
+    PromptMetadata(task="scene_planning",label="幕设定",description="通过工具批量创建与修改幕。",template_path="prompts/scene_planning.j2"),
+    PromptMetadata(task="writing",label="正文写作",description="按既有幕计划写作或修改正文。",template_path="prompts/writing.j2"),
+    PromptMetadata(task="discussion",label="普通讨论",description="查询资料与讨论想法，不修改小说。",template_path="prompts/discussion.j2"),
+    PromptMetadata(task="character_chat",label="角色对话",description="以指定故事阶段的人物身份交流。",template_path="prompts/character_chat.j2"),
 )
+
 PROMPT_CONTEXT_VARIABLES = list(PromptRuntimeContext.model_fields)
 _VARIABLES = {
     "schema_name": PromptContextVariable(
@@ -276,93 +201,21 @@ _VARIABLES = {
         name="maintenance_due", type="boolean", description="是否到达长期资料整理周期。"
     ),
 }
-_TASK_VARIABLES: dict[PromptTask, tuple[str, ...]] = {
-    "planning_decision": (
-        "schema_name",
-        "story_title",
-        "instruction",
-        "current_scene_summary",
-        "feedback",
-        "first_creation",
-    ),
-    "planning": (
-        "schema_name",
-        "story_title",
-        "instruction",
-        "current_scene_summary",
-        "first_creation",
-        "quick_path",
-    ),
-    "revision_plan": ("schema_name", "story_title", "instruction", "feedback", "selected_text", "draft_text"),
-    "character_consultation": (
-        "schema_name",
-        "story_title",
-        "instruction",
-        "current_scene_summary",
-        "character_name",
-        "role_profile",
-    ),
-    "rewrite_selection": ("schema_name", "instruction", "selected_text", "draft_text", "feedback"),
-    "writing": (
-        "schema_name",
-        "story_title",
-        "instruction",
-        "current_scene_summary",
-        "feedback",
-        "selected_text",
-        "draft_text",
-        "draft_summary",
-    ),
-    "judge": ("schema_name", "instruction", "feedback", "draft_text", "draft_summary"),
-    "extraction": (
-        "schema_name",
-        "story_title",
-        "instruction",
-        "draft_text",
-        "draft_summary",
-        "maintenance_due",
-    ),
-    "maintenance": (
-        "schema_name",
-        "story_title",
-        "instruction",
-        "draft_text",
-        "draft_summary",
-        "maintenance_due",
-    ),
-    "creation_interview": ("schema_name", "conversation_history", "discussion_message"),
-    "rewrite_snippet": ("schema_name", "instruction", "current_scene_summary", "selected_text"),
-    "scene_summary": ("schema_name", "draft_text", "current_scene_summary"),
-    "character_profile": ("schema_name", "character_name", "role_profile"),
-    "character_chat": (
-        "schema_name",
-        "story_title",
-        "character_name",
-        "role_profile",
-        "conversation_history",
-        "discussion_message",
-    ),
-    "discussion": (
-        "schema_name",
-        "story_title",
-        "current_scene_summary",
-        "discussion_message",
-        "conversation_history",
-        "tool_results",
-    ),
-}
-_METADATA_BY_TASK = {item.task: item for item in PROMPT_METADATA}
-_ENVIRONMENT = SandboxedEnvironment(
-    undefined=StrictUndefined, autoescape=False, trim_blocks=True, lstrip_blocks=True
-)
+_VARIABLES.update({name: PromptContextVariable(name=name,type="string",description=description) for name,description in SECTIONS.items()})
+_TASK_VARIABLES = {task: tuple(name for name in PROMPT_CONTEXT_VARIABLES if name not in SECTIONS) for task in ("creation_interview","scene_planning","writing","discussion","character_chat")}
 
+_METADATA_BY_TASK = {item.task:item for item in PROMPT_METADATA}
+_ENVIRONMENT = SandboxedEnvironment(undefined=StrictUndefined,autoescape=False,keep_trailing_newline=True)
+_ENVIRONMENT.globals.clear()
 
 def prompt_metadata(task: PromptTask) -> PromptMetadata:
     return _METADATA_BY_TASK[task]
 
 
 def prompt_context_schema(task: PromptTask) -> list[PromptContextVariable]:
-    return [_VARIABLES[name] for name in _TASK_VARIABLES[task]]
+    names = _TASK_VARIABLES.get(task, _TASK_VARIABLES["discussion"])
+    return [_VARIABLES[name] for name in (*names, *SECTIONS)]
+
 
 
 def default_prompt_source(task: PromptTask) -> str:
@@ -434,7 +287,7 @@ def prompt_version_label(template: PromptTemplateVersion) -> str:
     return f"{template.task}:v{template.version}:{template.id}:{digest[:12]}:{path}"
 
 
-def workflow_template(state: WorkflowState, task: PromptTask) -> PromptTemplateVersion | None:
+def workflow_template(state: WritingState, task: PromptTask) -> PromptTemplateVersion | None:
     return next((item for item in state.prompt_templates if item.task == task), None)
 
 
@@ -452,6 +305,7 @@ def default_template(task: PromptTask) -> PromptTemplateVersion:
     source = default_prompt_source(task)
     source_hash = prompt_source_hash(source)
     return PromptTemplateVersion(
+        context_source=default_context_source(),
         id=uuid5(NAMESPACE_URL, f"ainovel:prompt-template:{task}:default:v2:{source_hash}"),
         scope="global",
         scope_id=GLOBAL_PROMPT_SCOPE_ID,

@@ -8,8 +8,8 @@ from ainovel.core.domain import (
     DraftReviewResponse,
     Event,
     ReviewDraftRequest,
-    WorkflowState,
     WritingDraft,
+    WritingState,
 )
 from ainovel.core.errors import ConflictError
 from ainovel.mapper.models import CommandRow, EventRow
@@ -65,17 +65,7 @@ class ReviewDraftHandler(Handler[ReviewDraftRequest]):
                         feedback=request.feedback,
                         selection=request.selection,
                     )
-                    if request.decision == "confirm":
-                        await self.reuse_confirmation(submission, request, state)
-                state = await self.services.workflow.run(state)
-                if state.approval_phase:
-                    output = CommandOutput(
-                        need=state.plan.new_character if state.plan else None,
-                        approval_phase=state.approval_phase,
-                        message="修改草稿需要新角色，请先确认引入",
-                    )
-                    await store.finish(submission.id, output, "waiting")
-                    return output
+                state = await self.services.writing_agent.run(state)
                 if state.draft is None:
                     raise ValueError("缺少草稿正文")
                 draft = WritingDraft(
@@ -110,46 +100,8 @@ class ReviewDraftHandler(Handler[ReviewDraftRequest]):
                 return output
         raise ConflictError("草稿正在处理，请稍后重试")
 
-    async def reuse_confirmation(
-        self, submission: CommandSubmission, request: ReviewDraftRequest, state: WorkflowState
-    ) -> None:
-        """A second client command may retry an identical draft after an earlier failure.
-
-        Reuse only validated outputs from active failed confirmations of this exact
-        version, base story and prose. Undone operations and revised drafts are excluded.
-        """
-        store = self.services.store
-        for previous in reversed(await store.commands(submission.story_id)):
-            payload = previous.submission.payload
-            if (
-                previous.status != "failed"
-                or previous.undone
-                or not isinstance(payload, ReviewDraftRequest)
-                or payload.decision != "confirm"
-                or payload.generation_command_id != request.generation_command_id
-                or payload.expected_draft_version != request.expected_draft_version
-                or previous.submission.base_revision_id != submission.base_revision_id
-            ):
-                continue
-            cached = await store.checkpoint(previous.submission.id)
-            if (
-                cached is None
-                or cached.draft_status != "confirmed"
-                or cached.extraction is None
-                or cached.scene_id != state.scene_id
-                or cached.draft != state.draft
-                or cached.story != state.story
-            ):
-                continue
-            state.extraction = cached.extraction.model_copy(deep=True)
-            state.maintenance = cached.maintenance.model_copy(deep=True) if cached.maintenance else None
-            await self.services.workflow.step(
-                state, "reuse_confirmation", "复用同一草稿已完成的确认步骤，继续失败的后续操作"
-            )
-            return
-
     async def complete_review(
-        self, submission: CommandSubmission, state: WorkflowState, output: CommandOutput
+        self, submission: CommandSubmission, state: WritingState, output: CommandOutput
     ) -> None:
         store = self.services.store
         parent_id = output.writing_draft.generation_command_id

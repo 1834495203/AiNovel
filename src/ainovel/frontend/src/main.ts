@@ -1,7 +1,3 @@
 import { createApp } from "vue";
-import App from "./App.vue";
-import "./theme.css";
-
-import "./workspace.css";
-
+import App from "./studio/Application.vue";
 createApp(App).mount("#app");

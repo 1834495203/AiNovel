@@ -1,7 +1,9 @@
+
 from uuid import uuid4
 
 import httpx
 import pytest
+from configured_fields import make_world
 from pydantic import SecretStr, ValidationError
 from test_llm import Sink
 
@@ -16,7 +18,7 @@ from ainovel.core.discussion import (
     UpdateSettingsAction,
     UpdateSettingsArguments,
 )
-from ainovel.core.records import ReaderPreferences, WorldSetting, WriterWorkspace
+from ainovel.core.records import ReaderPreferences, WriterWorkspace
 from ainovel.llm.client import OpenAIModel
 from ainovel.llm.schemas import (
     ChatResponse,
@@ -33,7 +35,7 @@ def context() -> DiscussionContext:
         story=DiscussionStory(
             title="来信",
             revision_id=uuid4(),
-            world=WorldSetting(premise="都市"),
+            world=make_world("都市"),
             preferences=ReaderPreferences(),
             writer=WriterWorkspace(),
             characters=[],
@@ -87,10 +89,10 @@ async def test_native_optional_discussion_tools_and_normal_chat_history(kind: st
         if kind in ("update_story_settings", "edit_fields"):
             from ainovel.llm.errors import StructuredOutputError
             with pytest.raises(StructuredOutputError):
-                await model.choose_discussion_tool(context(), uuid4())
-            assert [item.function.name for item in requests[0].tools] == ["search_story"]
+                await model.choose_agent_tool(context(), uuid4())
+            assert [item.function.name for item in requests[0].tools] == ["search_story", "read_story_materials"]
             return
-        result = await model.choose_discussion_tool(context(), uuid4())
+        result = await model.choose_agent_tool(context(), uuid4())
         assert isinstance(
             result,
             {
@@ -101,12 +103,12 @@ async def test_native_optional_discussion_tools_and_normal_chat_history(kind: st
             }[kind],
         )
         assert requests[0].tool_choice == "auto" and requests[0].thinking.type == "disabled"
-        assert [item.function.name for item in requests[0].tools] == ["search_story"]
-        assert "只读讨论助手" in requests[0].messages[0].content
-        assert requests[0].messages[1].content.startswith("协议约束：")
-        assert requests[0].messages[2].content == "我喜欢慢热"
-        assert requests[0].messages[3].role == "assistant"
-        assert requests[0].messages[4].role == "user"
+        assert [item.function.name for item in requests[0].tools] == ["search_story", "read_story_materials"]
+        assert "小说讨论助手" in requests[0].messages[0].content
+        assert "tool_returns" in requests[0].messages[1].content
+        assert requests[0].messages[-3].content == "我喜欢慢热"
+        assert requests[0].messages[-2].role == "assistant"
+        assert requests[0].messages[-1].role == "user"
         assert sink.traces[0].error is None
     finally:
         await model.close()
@@ -135,7 +137,7 @@ async def test_unknown_discussion_tool_retries_before_any_business_execution() -
         transport=httpx.MockTransport(respond), base_url="https://example.test/v1/"
     )
     try:
-        result = await model.choose_discussion_tool(context(), uuid4())
+        result = await model.choose_agent_tool(context(), uuid4())
         assert isinstance(result, ReplyAction) and count == 2
         assert sink.traces[0].error and sink.traces[1].error is None
     finally:
@@ -145,3 +147,32 @@ async def test_unknown_discussion_tool_retries_before_any_business_execution() -
 def test_discussion_tool_schema_cannot_carry_prose_edits() -> None:
     with pytest.raises(ValidationError):
         UpdateSettingsArguments.model_validate_json('{"reason":"修改","scenes":[{"text":"新正文"}]}')
+
+
+def test_planning_tool_protocol_and_decoder_are_mode_scoped():
+    from ainovel.core.discussion import SaveScenePlansAction
+    from ainovel.llm.agent import AgentResultDecoder, build_agent_request
+    from ainovel.llm.errors import StructuredOutputError
+    planning = context().model_copy(update={"planning_mode":True})
+    request = build_agent_request(Settings(_env_file=None),planning,None)
+    assert [t.function.name for t in request.body.tools] == ["search_story","read_story_materials","save_scene_plans"]
+    message = ProviderMessage(role="assistant",tool_calls=[ToolCall(id="batch",function=FunctionCall(
+        name="save_scene_plans",arguments='{"create":[{"title":"第一幕","summary":"收到信"}]}'))])
+    assert isinstance(AgentResultDecoder(planning_mode=True).decode(message),SaveScenePlansAction)
+    with pytest.raises(StructuredOutputError):
+        AgentResultDecoder().decode(message)
+
+
+def test_planning_uses_compact_context_and_native_tool_results():
+    from ainovel.core.discussion import DiscussionToolResult
+    from ainovel.llm.agent import build_agent_request
+    ctx = context().model_copy(update={"planning_mode":True})
+    ctx.story.writer = WriterWorkspace()
+    ctx.tool_results = [DiscussionToolResult(name="save_scene_plans",call_id="call_saved",arguments_json='{"create":[]}',message="保存完成")]
+    request = build_agent_request(Settings(_env_file=None),ctx,None)
+    messages = request.body.messages
+    assert messages[-2].role == "assistant" and messages[-2].tool_calls[0].id == "call_saved"
+    assert messages[-1].role == "tool" and messages[-1].tool_call_id == "call_saved"
+    assert "field_documents" not in messages[-3].content
+    assert "snapshot" not in messages[-3].content
+    assert len(request.body.model_dump_json()) < 16000

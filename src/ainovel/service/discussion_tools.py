@@ -29,7 +29,7 @@ def context_story(story: Story, revision_id: UUID, recent_scenes: int) -> Discus
         ],
         recent_scenes=[
             DiscussionExcerpt(title=scene.title, text=scene.text, summary=scene.summary)
-            for scene in story.scenes[-recent_scenes:]
+            for scene in (story.scenes[-recent_scenes:] if recent_scenes > 0 else [])
         ],
         field_documents=[DiscussionFields(target=FieldTarget(scope=scope, entity_id=item.id), name=item.title, entries=item.custom_fields)
             for scope, items in (("chapter", story.chapters), ("scene", story.scenes)) for item in items],

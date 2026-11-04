@@ -4,6 +4,7 @@ import os
 from uuid import uuid4
 
 import pytest
+from configured_fields import make_world
 from sqlalchemy import delete, func, select, text
 
 from ainovel.core.config import Settings
@@ -12,6 +13,7 @@ from ainovel.core.domain import (
     CommandSubmission,
     ContextChunk,
     CreateStoryRequest,
+    CreationProposal,
     Event,
     InterviewRequest,
     PromptTemplateVersion,
@@ -19,7 +21,6 @@ from ainovel.core.domain import (
     SetSetupDraftDeletedRequest,
     SetupDraft,
     Story,
-    StorySetup,
     UndoRequest,
 )
 from ainovel.core.errors import ConflictError
@@ -80,9 +81,9 @@ class Resources:
 
     async def create(self, draft_id=None):
         command = await self.start(CreateStoryRequest(
-            confirmed=True, proposal=StorySetup(title="合成删除测试", world="城市"),
+            confirmed=True, proposal=CreationProposal(title="合成删除测试", world=make_world('城市')),
         ), draft_id)
-        story = Story(title="合成删除测试", world="城市")
+        story = Story(title="合成删除测试", world=make_world('城市'))
         self.stories.add(story.id)
         self.ids.add(story.id)
         chunk = ContextChunk(chapter_id=uuid4(), ordinal=0, kind="paragraph", content="合成正文")
@@ -210,38 +211,6 @@ async def test_story_purge_also_erases_creation_draft_and_keeps_unrelated_story(
         await h.store.submit(create)
 
 
-async def test_postgres_purge_waits_for_worker_lease_and_removes_all_checkpoint_namespaces(resources):
-    h = resources
-    if h.store.engine.dialect.name != "postgresql":
-        pytest.skip("PostgreSQL leases and graph tables")
-    from ainovel.infrastructure.checkpoints import GraphCheckpoints
-
-    graph = GraphCheckpoints(Settings(llm_provider="mock"))
-    await graph.initialize()
-    draft_id, interview, _ = await h.draft()
-    await h.trash_draft(draft_id)
-    try:
-        async with h.store.sessions.begin() as session:
-            for namespace in ("", "writing:synthetic"):
-                await session.execute(text("INSERT INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, checkpoint) VALUES (:id, :ns, 'synthetic', '{}')"), {"id": str(interview.id), "ns": namespace})
-                await session.execute(text("INSERT INTO checkpoint_blobs (thread_id, checkpoint_ns, channel, version, type, blob) VALUES (:id, :ns, 'state', '1', 'json', :blob)"), {"id": str(interview.id), "ns": namespace, "blob": b"synthetic"})
-                await session.execute(text("INSERT INTO checkpoint_writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, blob) VALUES (:id, :ns, 'synthetic', 'task', 0, 'state', :blob)"), {"id": str(interview.id), "ns": namespace, "blob": b"synthetic"})
-        async with h.store.sessions() as worker_session:
-            key = interview.id.int % (2**63 - 1)
-            await worker_session.execute(select(func.pg_advisory_lock(key)))
-            try:
-                with pytest.raises(ConflictError, match="后台任务"):
-                    await purge(h.store, draft_id, draft=True)
-                assert await h.store.command_lifecycle(interview.id) is not None
-            finally:
-                await worker_session.execute(select(func.pg_advisory_unlock(key)))
-        await purge(h.store, draft_id, draft=True)
-        async with h.store.sessions() as session:
-            for name in ("checkpoints", "checkpoint_blobs", "checkpoint_writes"):
-                assert await session.scalar(text(f"SELECT count(*) FROM {name} WHERE thread_id = :id"), {"id": str(interview.id)}) == 0
-    finally:
-        await graph.saver.adelete_thread(str(interview.id))
-        await graph.close()
 
 
 async def test_delete_api_requires_trash_and_removes_queue_ids(resources, monkeypatch):

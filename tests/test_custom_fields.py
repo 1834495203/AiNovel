@@ -4,6 +4,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+from configured_fields import make_world
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
@@ -29,8 +30,6 @@ from ainovel.core.fields import (
 from ainovel.core.records import (
     CollectionPatch,
     Entry,
-    PlotThread,
-    Preference,
     ReaderPreferences,
     WorldSetting,
     WriterWorkspace,
@@ -78,28 +77,15 @@ def test_templates_are_definitions_not_values_and_instances_are_independent():
         FieldDefinition(name="立场", type="enum", options=[])
 
 
-def test_fixed_material_groups_are_canonical_custom_entries_and_old_data_round_trips():
-    line = PlotThread(name="逃离港口", next_steps=["找到船"])
-    writer = WriterWorkspace(
-        mainlines=[line], progress="第一幕", custom_fields=[Entry(name="额外笔记", value="留意天气")]
-    )
-    preferences = ReaderPreferences(likes=[Preference(name="节奏紧凑")])
-    world = WorldSetting(premise="浮空城")
-    assert (
-        set(WriterWorkspace.model_fields)
-        == set(ReaderPreferences.model_fields)
-        == set(WorldSetting.model_fields)
-        == {"entries"}
-    )
-    assert set(writer.model_dump(round_trip=True)) == {"entries"}
-    assert WriterWorkspace.model_validate_json(writer.model_dump_json(round_trip=True)).mainlines == [line]
-    assert ReaderPreferences.model_validate_json(preferences.model_dump_json()).likes == preferences.likes
-    assert WorldSetting.model_validate_json(world.model_dump_json()).premise == "浮空城"
-    assert any(entry.definition and entry.definition.name == "主线" for entry in writer.entries)
-    assert any(
-        template.scope == "writer" and any(field.name == "创作笔记" for field in template.fields)
-        for template in default_templates()
-    )
+def test_materials_use_entries_and_defaults_are_empty():
+    from pydantic import ValidationError
+    assert set(WriterWorkspace.model_fields) == set(ReaderPreferences.model_fields) == set(WorldSetting.model_fields) == {"entries"}
+    assert all(not item.fields for item in default_templates())
+    writer = WriterWorkspace(entries=[Entry(name="用户自己的笔记",value="线索")])
+    assert set(writer.model_dump()) == {"entries"}
+    assert WriterWorkspace.model_validate_json(writer.model_dump_json()) == writer
+    with pytest.raises(ValidationError):
+        WriterWorkspace(mainlines=[])
 
 
 def test_patch_addresses_use_ids_and_preserve_reordering_deletion_and_false_values():
@@ -119,7 +105,7 @@ def test_patch_addresses_use_ids_and_preserve_reordering_deletion_and_false_valu
 
 
 def test_custom_definitions_and_values_reach_the_writing_context():
-    from ainovel.core.domain import Draft, WorkflowState
+    from ainovel.core.domain import Draft, WritingState
     from ainovel.llm.schemas import project_context
 
     chapter = Chapter(title="第一章", custom_fields=[Entry(name="主题", value="离别")])
@@ -133,13 +119,13 @@ def test_custom_definitions_and_values_reach_the_writing_context():
             value="克制",
         )
     ]
-    result = project_context(Draft, WorkflowState(command_id=uuid4(), story=story, instruction="继续"))
+    result = project_context(Draft, WritingState(command_id=uuid4(), story=story, instruction="继续"))
     text = result.model_dump_json()
     assert all(value in text for value in ("第二人称", "离别", "避免感叹号", "克制"))
-    default = next(template for template in default_templates() if template.scope == "writer").fields[0]
+    default = FieldDefinition(name="自由主线",type="text")
     changed = default.model_copy(update={"type": "text", "item": None})
     story.writer.entries = [Entry(name=changed.name, definition=changed, value="用自由文本记录主线")]
-    result = project_context(Draft, WorkflowState(command_id=uuid4(), story=story, instruction="继续"))
+    result = project_context(Draft, WritingState(command_id=uuid4(), story=story, instruction="继续"))
     assert "用自由文本记录主线" in result.model_dump_json()
 
 
@@ -193,7 +179,7 @@ def test_legacy_revision_is_a_baseline_and_new_reads_replay_the_journal():
     async def run():
         store = Store(Settings(_env_file=None, database_url="sqlite+aiosqlite:///:memory:"))
         await store.initialize()
-        story = Story(title="旧小说", world="旧世界")
+        story = Story(title="旧小说", world=make_world('旧世界'))
         old = Revision(story_id=story.id, command_id=uuid4(), reason="旧版本", story=story)
         try:
             async with store.sessions.begin() as session:
@@ -239,7 +225,7 @@ def test_template_save_batch_apply_edits_and_undo_are_atomic_and_persistent():
             story = Story(title="模板测试", chapters=[Chapter(title="一"), Chapter(title="二")])
             create = CommandSubmission(
                 payload=CreateStoryRequest(
-                    proposal=CreationProposal(title=story.title, world="城"), confirmed=True
+                    proposal=CreationProposal(title=story.title, world=make_world('城')), confirmed=True
                 )
             )
 

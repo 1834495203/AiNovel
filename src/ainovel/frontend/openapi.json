@@ -5,6 +5,755 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/studio/contracts": {
+      "get": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Contracts",
+        "operationId": "contracts_api_studio_contracts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels": {
+      "get": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Novels",
+        "operationId": "novels_api_studio_novels_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NovelCard"
+                  },
+                  "type": "array",
+                  "title": "Response Novels Api Studio Novels Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_studio_novels_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/templates": {
+      "get": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Templates",
+        "operationId": "templates_api_studio_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudioFieldTemplate"
+                  },
+                  "type": "array",
+                  "title": "Response Templates Api Studio Templates Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Save Template",
+        "operationId": "save_template_api_studio_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveFieldTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioFieldTemplate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/templates/{key}": {
+      "delete": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Remove Template",
+        "operationId": "remove_template_api_studio_templates__key__delete",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/template": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Apply Template",
+        "operationId": "apply_template_api_studio_novels__key__template_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyFieldTemplate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/template/export": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Export Template",
+        "operationId": "export_template_api_studio_novels__key__template_export_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportFieldTemplate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioFieldTemplate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}": {
+      "get": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Novel",
+        "operationId": "novel_api_studio_novels__key__get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Purge",
+        "operationId": "purge_api_studio_novels__key__delete",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/message": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Message",
+        "operationId": "message_api_studio_novels__key__message_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/turn": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Turn",
+        "operationId": "turn_api_studio_novels__key__turn_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/control": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Control",
+        "operationId": "control_api_studio_novels__key__control_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/edit": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Edit",
+        "operationId": "edit_api_studio_novels__key__edit_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/settings": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Save Settings",
+        "operationId": "save_settings_api_studio_novels__key__settings_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/preview": {
+      "get": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Preview",
+        "operationId": "preview_api_studio_novels__key__preview_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "scene_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "message",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Message"
+            }
+          },
+          {
+            "name": "branch_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Branch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/estimate": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Preview Edits",
+        "operationId": "preview_edits_api_studio_novels__key__estimate_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/field-templates": {
       "get": {
         "summary": "Field Templates",
@@ -614,6 +1363,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai-contracts": {
+      "get": {
+        "summary": "Ai Contracts",
+        "operationId": "ai_contracts_api_ai_contracts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIContractCatalog"
                 }
               }
             }
@@ -1350,6 +2117,45 @@
   },
   "components": {
     "schemas": {
+      "AIContractCatalog": {
+        "properties": {
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolContract"
+            },
+            "type": "array",
+            "title": "Tools",
+            "description": "当前 agent 可调用的工具及独立参数、返回值 schema。"
+          },
+          "results": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Results",
+            "description": "正文等结构化任务使用的结果 schema。"
+          },
+          "context_fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Context Fields",
+            "description": "上下文中实际字段值的结构，独立于用户字段定义。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tools",
+          "results",
+          "context_fields"
+        ],
+        "title": "AIContractCatalog"
+      },
       "AcceptRewriteRequest": {
         "properties": {
           "kind": {
@@ -1493,6 +2299,25 @@
         ],
         "title": "Alias"
       },
+      "ApplyFieldTemplate": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "template_id": {
+            "type": "string",
+            "title": "Template Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "template_id"
+        ],
+        "title": "ApplyFieldTemplate"
+      },
       "ApplyFieldTemplateRequest": {
         "properties": {
           "kind": {
@@ -1523,6 +2348,63 @@
           "targets"
         ],
         "title": "ApplyFieldTemplateRequest"
+      },
+      "Attribute": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Key",
+            "description": "变量名，同一实体内唯一。"
+          },
+          "value_type": {
+            "type": "string",
+            "enum": [
+              "str",
+              "int",
+              "float",
+              "bool",
+              "list"
+            ],
+            "title": "Value Type",
+            "description": "变量值的类型。"
+          },
+          "current_value": {
+            "$ref": "#/components/schemas/JsonValue",
+            "description": "当前变量值，必须符合声明的类型。"
+          },
+          "why": {
+            "type": "string",
+            "title": "Why",
+            "description": "为什么定义这个变量。",
+            "default": ""
+          },
+          "how": {
+            "type": "string",
+            "title": "How",
+            "description": "变量的叙事表现；数值应说明不同区间的具体表现。",
+            "default": ""
+          },
+          "when": {
+            "type": "string",
+            "title": "When",
+            "description": "什么情形下应修改此变量。",
+            "default": ""
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility",
+            "description": "0 仅 GM/系统；1 仅所属角色；2 公开，仍受在场范围限制。",
+            "default": 2
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "value_type",
+          "current_value"
+        ],
+        "title": "Attribute"
       },
       "Change": {
         "properties": {
@@ -1786,15 +2668,18 @@
         "properties": {
           "name": {
             "type": "string",
-            "title": "Name"
+            "title": "Name",
+            "description": "拟引入人物的姓名。"
           },
           "role": {
             "type": "string",
-            "title": "Role"
+            "title": "Role",
+            "description": "人物在故事中的作用。"
           },
           "reason": {
             "type": "string",
-            "title": "Reason"
+            "title": "Reason",
+            "description": "本幕为何需要这个持续角色。"
           }
         },
         "additionalProperties": false,
@@ -2040,21 +2925,25 @@
           "session_id": {
             "type": "string",
             "format": "uuid",
-            "title": "Session Id"
+            "title": "Session Id",
+            "description": "原样返回输入中的会话标识。"
           },
           "snapshot_id": {
             "type": "string",
             "format": "uuid",
-            "title": "Snapshot Id"
+            "title": "Snapshot Id",
+            "description": "原样返回本次访谈所用的人物阶段快照标识。"
           },
           "reply": {
             "type": "string",
-            "title": "Reply"
+            "title": "Reply",
+            "description": "符合该人物阶段知识和说话方式的回答。"
           },
           "canon": {
             "type": "boolean",
             "const": false,
             "title": "Canon",
+            "description": "访谈不属于正式正文事实，恒为假。",
             "default": false
           }
         },
@@ -2065,7 +2954,8 @@
           "snapshot_id",
           "reply"
         ],
-        "title": "ChatResult"
+        "title": "ChatResult",
+        "description": "不修改正文的角色访谈结果。"
       },
       "CollectionPatch_Alias_-Input": {
         "properties": {
@@ -2773,6 +3663,12 @@
                 "$ref": "#/components/schemas/SetSetupDraftDeletedRequest"
               },
               {
+                "$ref": "#/components/schemas/PlanSceneRequest"
+              },
+              {
+                "$ref": "#/components/schemas/SelectSceneBranchRequest"
+              },
+              {
                 "$ref": "#/components/schemas/UpdateStoryRequest-Input"
               },
               {
@@ -2815,6 +3711,7 @@
                 "generate": "#/components/schemas/GenerateRequest-Input",
                 "initialize_story_template_set": "#/components/schemas/InitializeStoryTemplateSetRequest",
                 "interview": "#/components/schemas/InterviewRequest",
+                "plan_scene": "#/components/schemas/PlanSceneRequest",
                 "recover_command": "#/components/schemas/RecoverCommandRequest",
                 "reindex": "#/components/schemas/ReindexRequest",
                 "reject_rewrite": "#/components/schemas/RejectRewriteRequest",
@@ -2827,6 +3724,7 @@
                 "save_field_template_set": "#/components/schemas/SaveFieldTemplateSetRequest-Input",
                 "save_prompt_template": "#/components/schemas/SavePromptTemplateRequest",
                 "save_setup_draft": "#/components/schemas/SaveSetupDraftRequest-Input",
+                "select_scene_branch": "#/components/schemas/SelectSceneBranchRequest",
                 "set_setup_draft_deleted": "#/components/schemas/SetSetupDraftDeletedRequest",
                 "start_character_chat": "#/components/schemas/StartCharacterChatRequest",
                 "start_discussion": "#/components/schemas/StartDiscussionRequest",
@@ -2956,6 +3854,12 @@
                 "$ref": "#/components/schemas/SetSetupDraftDeletedRequest"
               },
               {
+                "$ref": "#/components/schemas/PlanSceneRequest"
+              },
+              {
+                "$ref": "#/components/schemas/SelectSceneBranchRequest"
+              },
+              {
                 "$ref": "#/components/schemas/UpdateStoryRequest-Output"
               },
               {
@@ -2998,6 +3902,7 @@
                 "generate": "#/components/schemas/GenerateRequest-Output",
                 "initialize_story_template_set": "#/components/schemas/InitializeStoryTemplateSetRequest",
                 "interview": "#/components/schemas/InterviewRequest",
+                "plan_scene": "#/components/schemas/PlanSceneRequest",
                 "recover_command": "#/components/schemas/RecoverCommandRequest",
                 "reindex": "#/components/schemas/ReindexRequest",
                 "reject_rewrite": "#/components/schemas/RejectRewriteRequest",
@@ -3010,6 +3915,7 @@
                 "save_field_template_set": "#/components/schemas/SaveFieldTemplateSetRequest-Output",
                 "save_prompt_template": "#/components/schemas/SavePromptTemplateRequest",
                 "save_setup_draft": "#/components/schemas/SaveSetupDraftRequest-Output",
+                "select_scene_branch": "#/components/schemas/SelectSceneBranchRequest",
                 "set_setup_draft_deleted": "#/components/schemas/SetSetupDraftDeletedRequest",
                 "start_character_chat": "#/components/schemas/StartCharacterChatRequest",
                 "start_discussion": "#/components/schemas/StartDiscussionRequest",
@@ -3087,6 +3993,182 @@
           "submission"
         ],
         "title": "CommandView"
+      },
+      "Compression": {
+        "properties": {
+          "full_chapters": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Full Chapters",
+            "description": "最近多少章发送完整内容。",
+            "default": 2
+          },
+          "scene_chapters": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Scene Chapters",
+            "description": "再往前多少章发送幕设定和演绎，其余发送章节摘要。",
+            "default": 3
+          },
+          "snapshot_interval": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Snapshot Interval",
+            "description": "角色快照的确认幕间隔。",
+            "default": 5
+          },
+          "max_calls": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Calls",
+            "description": "一轮 GM 与角色合计模型调用预算。",
+            "default": 16
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "Compression"
+      },
+      "ContextField": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "已有字段值的稳定 ID，可用于定向修改。"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "用户定义的字段名称。"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue",
+            "description": "实际填写的内容。"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "用户提供的字段解释。",
+            "default": ""
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/ContextField"
+            },
+            "type": "array",
+            "title": "Children",
+            "description": "已填写的子字段。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ContextField",
+        "description": "One filled field, without storage definitions or template metadata."
+      },
+      "ControlRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "confirm_creation",
+              "new_scene",
+              "confirm_scene",
+              "reset",
+              "branch",
+              "write",
+              "undo_prose",
+              "finish_chapter",
+              "delete",
+              "restore",
+              "enter",
+              "leave"
+            ],
+            "title": "Action"
+          },
+          "scene_id": {
+            "type": "string",
+            "title": "Scene Id",
+            "default": ""
+          },
+          "branch_id": {
+            "type": "string",
+            "title": "Branch Id",
+            "default": ""
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "new_chapter": {
+            "type": "boolean",
+            "title": "New Chapter",
+            "default": false
+          },
+          "instruction": {
+            "type": "string",
+            "title": "Instruction",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "action"
+        ],
+        "title": "ControlRequest"
+      },
+      "ConversationMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ConversationMessage"
       },
       "CreateStoryRequest-Input": {
         "properties": {
@@ -3306,6 +4388,35 @@
         "type": "object",
         "title": "DeleteStoryRequest"
       },
+      "Description": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name",
+            "description": "描述字段名称，同一实体内唯一。"
+          },
+          "value": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Value",
+            "description": "描述内容列表。"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility",
+            "description": "0 仅 GM/系统；1 仅所属角色；2 公开，仍受在场范围限制。",
+            "default": 2
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "Description"
+      },
       "Direction": {
         "properties": {
           "id": {
@@ -3395,15 +4506,18 @@
         "properties": {
           "title": {
             "type": "string",
-            "title": "Title"
+            "title": "Title",
+            "description": "片段类别或来源标题。"
           },
           "text": {
             "type": "string",
-            "title": "Text"
+            "title": "Text",
+            "description": "查到的正文片段。"
           },
           "summary": {
             "type": "string",
             "title": "Summary",
+            "description": "可用时提供片段摘要。",
             "default": ""
           }
         },
@@ -3413,10 +4527,20 @@
           "title",
           "text"
         ],
-        "title": "DiscussionExcerpt"
+        "title": "DiscussionExcerpt",
+        "description": "从已确认正文检索出的片段。"
       },
       "DiscussionRequest": {
         "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "discussion",
+              "planning"
+            ],
+            "title": "Mode",
+            "default": "discussion"
+          },
           "kind": {
             "type": "string",
             "const": "discussion",
@@ -3495,6 +4619,15 @@
       },
       "DiscussionSession": {
         "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "discussion",
+              "planning"
+            ],
+            "title": "Mode",
+            "default": "discussion"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -3540,26 +4673,69 @@
             "type": "string",
             "enum": [
               "search_story",
-              "update_story_settings",
-              "edit_fields"
+              "read_story_materials",
+              "save_scene_plans"
             ],
-            "title": "Name"
+            "title": "Name",
+            "description": "执行的工具名称。"
           },
           "success": {
             "type": "boolean",
             "title": "Success",
+            "description": "本次工具调用是否成功。",
             "default": true
           },
           "message": {
             "type": "string",
-            "title": "Message"
+            "title": "Message",
+            "description": "操作结果或可修正的错误说明；保存工具的结果在本轮结束时提交。"
           },
           "excerpts": {
             "items": {
               "$ref": "#/components/schemas/DiscussionExcerpt"
             },
             "type": "array",
-            "title": "Excerpts"
+            "title": "Excerpts",
+            "description": "查询工具返回的正文片段；保存工具为空。"
+          },
+          "materials": {
+            "items": {
+              "$ref": "#/components/schemas/ContextField"
+            },
+            "type": "array",
+            "title": "Materials",
+            "description": "按需读取的资料内容，省略存储定义元数据。"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset",
+            "description": "还有未返回条目时，使用这个偏移继续读取。"
+          },
+          "affected_scene_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Affected Scene Ids",
+            "description": "本次成功创建或修改的幕 ID，可供后续工具引用。"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id",
+            "default": ""
+          },
+          "arguments_json": {
+            "type": "string",
+            "title": "Arguments Json",
+            "default": ""
           }
         },
         "additionalProperties": false,
@@ -3568,22 +4744,26 @@
           "name",
           "message"
         ],
-        "title": "DiscussionToolResult"
+        "title": "DiscussionToolResult",
+        "description": "运行记录的内部消息配对元数据，不发送给模型。"
       },
       "Draft": {
         "properties": {
           "title": {
             "type": "string",
-            "title": "Title"
+            "title": "Title",
+            "description": "本幕正文标题。"
           },
           "text": {
             "type": "string",
             "minLength": 1,
-            "title": "Text"
+            "title": "Text",
+            "description": "完整正文，保留段落和排版。"
           },
           "summary": {
             "type": "string",
-            "title": "Summary"
+            "title": "Summary",
+            "description": "只概括正文实际发生事件的摘要。"
           }
         },
         "additionalProperties": false,
@@ -3593,7 +4773,8 @@
           "text",
           "summary"
         ],
-        "title": "Draft"
+        "title": "Draft",
+        "description": "待用户确认的一幕正文及事实摘要，不包含字段 schema。"
       },
       "DraftFieldEdit": {
         "properties": {
@@ -3715,6 +4896,146 @@
           "patch"
         ],
         "title": "EditFieldsRequest"
+      },
+      "EditRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "world",
+              "characters",
+              "creation",
+              "chapters",
+              "scenes"
+            ],
+            "title": "Scope"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target",
+            "default": ""
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntityInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delete": {
+            "type": "boolean",
+            "title": "Delete",
+            "default": false
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "scope"
+        ],
+        "title": "EditRequest"
+      },
+      "Entity": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name",
+            "description": "实体名字。"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Type",
+            "description": "实体类型，例如 human、location、item、skill、world。",
+            "default": "human"
+          },
+          "description": {
+            "items": {
+              "$ref": "#/components/schemas/Description"
+            },
+            "type": "array",
+            "title": "Description",
+            "description": "描述性资料。"
+          },
+          "special_attributes": {
+            "items": {
+              "$ref": "#/components/schemas/Attribute"
+            },
+            "type": "array",
+            "title": "Special Attributes",
+            "description": "需要跟踪的变量。"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "程序生成的稳定标识，创建实体时 AI 不填写。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "Entity"
+      },
+      "EntityInput": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name",
+            "description": "实体名字。"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Type",
+            "description": "实体类型，例如 human、location、item、skill、world。",
+            "default": "human"
+          },
+          "description": {
+            "items": {
+              "$ref": "#/components/schemas/Description"
+            },
+            "type": "array",
+            "title": "Description",
+            "description": "描述性资料。"
+          },
+          "special_attributes": {
+            "items": {
+              "$ref": "#/components/schemas/Attribute"
+            },
+            "type": "array",
+            "title": "Special Attributes",
+            "description": "需要跟踪的变量。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "EntityInput"
       },
       "Entry-Input": {
         "properties": {
@@ -3874,6 +5195,47 @@
         ],
         "title": "Entry"
       },
+      "EstimateRequest": {
+        "properties": {
+          "scene_id": {
+            "type": "string",
+            "title": "Scene Id",
+            "default": ""
+          },
+          "branch_id": {
+            "type": "string",
+            "title": "Branch Id",
+            "default": ""
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          },
+          "compression": {
+            "$ref": "#/components/schemas/Compression"
+          },
+          "prompts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Prompts"
+          },
+          "context_source": {
+            "type": "string",
+            "title": "Context Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "compression",
+          "prompts",
+          "context_source"
+        ],
+        "title": "EstimateRequest"
+      },
       "Event": {
         "properties": {
           "command_id": {
@@ -4024,6 +5386,27 @@
           "event"
         ],
         "title": "Experience"
+      },
+      "ExportFieldTemplate": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "name"
+        ],
+        "title": "ExportFieldTemplate"
       },
       "ExportStoryFieldSchemaRequest": {
         "properties": {
@@ -4815,6 +6198,18 @@
       },
       "GenerateRequest-Input": {
         "properties": {
+          "planned_scene_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Scene Id"
+          },
           "kind": {
             "type": "string",
             "const": "generate",
@@ -4851,6 +6246,18 @@
       },
       "GenerateRequest-Output": {
         "properties": {
+          "planned_scene_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Scene Id"
+          },
           "kind": {
             "type": "string",
             "const": "generate",
@@ -5109,14 +6516,16 @@
         "properties": {
           "reply": {
             "type": "string",
-            "title": "Reply"
+            "title": "Reply",
+            "description": "面向用户的回复或必要的追问。"
           },
           "checklist": {
             "items": {
               "$ref": "#/components/schemas/CreationField"
             },
             "type": "array",
-            "title": "Checklist"
+            "title": "Checklist",
+            "description": "标明当前已定义、缺失或允许稍后定义的内容。"
           },
           "proposal": {
             "anyOf": [
@@ -5126,7 +6535,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "依据已知信息整理的当前提案，允许不完整，不虚构用户已确认的设定。"
           }
         },
         "additionalProperties": false,
@@ -5134,9 +6544,44 @@
         "required": [
           "reply"
         ],
-        "title": "InterviewResult"
+        "title": "InterviewResult",
+        "description": "构思访谈的回复与当前提案；不创建正式小说。"
       },
       "JsonValue": {},
+      "NovelCard": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "busy": {
+            "type": "boolean",
+            "title": "Busy"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "created",
+          "deleted",
+          "busy"
+        ],
+        "title": "NovelCard"
+      },
       "OutlineBeat-Input": {
         "properties": {
           "id": {
@@ -5293,6 +6738,37 @@
         ],
         "title": "OutlineBeat"
       },
+      "Patch": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove",
+              "replace",
+              "test"
+            ],
+            "title": "Op",
+            "description": "JSON Patch 操作。"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "相对目标的 JSON Pointer 路径，使用 ~0/~1 转义。"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue",
+            "description": "add/replace/test 的值；remove 无需值。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "op",
+          "path"
+        ],
+        "title": "Patch"
+      },
       "PatchPart": {
         "properties": {
           "kind": {
@@ -5315,6 +6791,147 @@
           "value"
         ],
         "title": "PatchPart"
+      },
+      "Plan": {
+        "properties": {
+          "writer_patch": {
+            "$ref": "#/components/schemas/WriterPatch-Output",
+            "description": "对已有创作资料的增量修改；无变化时保持空补丁。"
+          },
+          "chapter_plan": {
+            "type": "string",
+            "title": "Chapter Plan",
+            "description": "当前章节的简要安排。"
+          },
+          "scene_plan": {
+            "type": "string",
+            "title": "Scene Plan",
+            "description": "本幕的核心事件、行动和悬念。"
+          },
+          "character_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Character Names",
+            "description": "本幕相关的角色姓名。"
+          },
+          "new_character": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CharacterNeed"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "确需引入的持续角色及原因；没有则省略。"
+          },
+          "start_new_chapter": {
+            "type": "boolean",
+            "title": "Start New Chapter",
+            "description": "是否在本幕开启新章节。",
+            "default": false
+          },
+          "chapter_title": {
+            "type": "string",
+            "title": "Chapter Title",
+            "description": "开启新章时使用的标题。",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "chapter_plan",
+          "scene_plan",
+          "character_names"
+        ],
+        "title": "Plan",
+        "description": "一幕的剧情计划。计划不是已发生事实，已有幕计划时正文直接复用。"
+      },
+      "PlanSceneRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "plan_scene",
+            "title": "Kind",
+            "default": "plan_scene"
+          },
+          "instruction": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Instruction"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "instruction"
+        ],
+        "title": "PlanSceneRequest"
+      },
+      "PlannedScene": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "plan"
+        ],
+        "title": "PlannedScene"
       },
       "PlotThread-Input": {
         "properties": {
@@ -5841,6 +7458,41 @@
       },
       "PromptTemplatePreviewContext": {
         "properties": {
+          "world_context": {
+            "type": "string",
+            "title": "World Context",
+            "default": ""
+          },
+          "characters_context": {
+            "type": "string",
+            "title": "Characters Context",
+            "default": ""
+          },
+          "preferences_context": {
+            "type": "string",
+            "title": "Preferences Context",
+            "default": ""
+          },
+          "writer_context": {
+            "type": "string",
+            "title": "Writer Context",
+            "default": ""
+          },
+          "scene_plans_context": {
+            "type": "string",
+            "title": "Scene Plans Context",
+            "default": ""
+          },
+          "recent_story_context": {
+            "type": "string",
+            "title": "Recent Story Context",
+            "default": ""
+          },
+          "task_context": {
+            "type": "string",
+            "title": "Task Context",
+            "default": ""
+          },
           "schema_name": {
             "type": "string",
             "title": "Schema Name",
@@ -5928,24 +7580,26 @@
       },
       "PromptTemplatePreviewRequest": {
         "properties": {
+          "context_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 12000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Source"
+          },
           "task": {
             "type": "string",
             "enum": [
-              "planning_decision",
-              "planning",
-              "revision_plan",
-              "character_consultation",
-              "rewrite_selection",
-              "writing",
-              "judge",
-              "extraction",
-              "maintenance",
               "creation_interview",
-              "rewrite_snippet",
-              "scene_summary",
-              "character_profile",
-              "character_chat",
-              "discussion"
+              "scene_planning",
+              "writing",
+              "discussion",
+              "character_chat"
             ],
             "title": "Task"
           },
@@ -5983,21 +7637,11 @@
           "task": {
             "type": "string",
             "enum": [
-              "planning_decision",
-              "planning",
-              "revision_plan",
-              "character_consultation",
-              "rewrite_selection",
-              "writing",
-              "judge",
-              "extraction",
-              "maintenance",
               "creation_interview",
-              "rewrite_snippet",
-              "scene_summary",
-              "character_profile",
-              "character_chat",
-              "discussion"
+              "scene_planning",
+              "writing",
+              "discussion",
+              "character_chat"
             ],
             "title": "Task"
           },
@@ -6020,21 +7664,11 @@
           "task": {
             "type": "string",
             "enum": [
-              "planning_decision",
-              "planning",
-              "revision_plan",
-              "character_consultation",
-              "rewrite_selection",
-              "writing",
-              "judge",
-              "extraction",
-              "maintenance",
               "creation_interview",
-              "rewrite_snippet",
-              "scene_summary",
-              "character_profile",
-              "character_chat",
-              "discussion"
+              "scene_planning",
+              "writing",
+              "discussion",
+              "character_chat"
             ],
             "title": "Task"
           },
@@ -6107,6 +7741,12 @@
       },
       "PromptTemplateVersion": {
         "properties": {
+          "context_source": {
+            "type": "string",
+            "maxLength": 12000,
+            "title": "Context Source",
+            "description": "独立的 Jinja2 上下文布局源码；不包含 JSON Schema。"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -6128,21 +7768,11 @@
           "task": {
             "type": "string",
             "enum": [
-              "planning_decision",
-              "planning",
-              "revision_plan",
-              "character_consultation",
-              "rewrite_selection",
-              "writing",
-              "judge",
-              "extraction",
-              "maintenance",
               "creation_interview",
-              "rewrite_snippet",
-              "scene_summary",
-              "character_profile",
-              "character_chat",
-              "discussion"
+              "scene_planning",
+              "writing",
+              "discussion",
+              "character_chat"
             ],
             "title": "Task"
           },
@@ -6276,39 +7906,10 @@
             },
             "type": "array",
             "title": "Entries"
-          },
-          "likes": {
-            "items": {
-              "$ref": "#/components/schemas/Preference-Output"
-            },
-            "type": "array",
-            "title": "Likes",
-            "readOnly": true
-          },
-          "dislikes": {
-            "items": {
-              "$ref": "#/components/schemas/Preference-Output"
-            },
-            "type": "array",
-            "title": "Dislikes",
-            "readOnly": true
-          },
-          "custom_fields": {
-            "items": {
-              "$ref": "#/components/schemas/Entry-Output"
-            },
-            "type": "array",
-            "title": "Custom Fields",
-            "readOnly": true
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "likes",
-          "dislikes",
-          "custom_fields"
-        ],
         "title": "ReaderPreferences"
       },
       "RecoverCommandRequest": {
@@ -6609,6 +8210,25 @@
       },
       "RewriteProposal": {
         "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          },
+          "updates": {
+            "items": {
+              "$ref": "#/components/schemas/StateUpdate"
+            },
+            "type": "array",
+            "title": "Updates"
+          },
+          "materials": {
+            "items": {
+              "$ref": "#/components/schemas/EditFieldsRequest-Output"
+            },
+            "type": "array",
+            "title": "Materials"
+          },
           "source_revision_id": {
             "type": "string",
             "format": "uuid",
@@ -7097,6 +8717,42 @@
         ],
         "title": "RunStep"
       },
+      "SaveFieldTemplate": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 0
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "fields": {
+            "$ref": "#/components/schemas/TemplateFields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "fields"
+        ],
+        "title": "SaveFieldTemplate"
+      },
       "SaveFieldTemplateRequest-Input": {
         "properties": {
           "kind": {
@@ -7199,6 +8855,19 @@
       },
       "SavePromptTemplateRequest": {
         "properties": {
+          "context_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 12000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Source",
+            "description": "上下文 Jinja2 模板，与行为提示词分别保存。"
+          },
           "kind": {
             "type": "string",
             "const": "save_prompt_template",
@@ -7225,21 +8894,11 @@
           "task": {
             "type": "string",
             "enum": [
-              "planning_decision",
-              "planning",
-              "revision_plan",
-              "character_consultation",
-              "rewrite_selection",
-              "writing",
-              "judge",
-              "extraction",
-              "maintenance",
               "creation_interview",
-              "rewrite_snippet",
-              "scene_summary",
-              "character_profile",
-              "character_chat",
-              "discussion"
+              "scene_planning",
+              "writing",
+              "discussion",
+              "character_chat"
             ],
             "title": "Task"
           },
@@ -7376,6 +9035,52 @@
         ],
         "title": "Scene"
       },
+      "SelectSceneBranchRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "select_scene_branch",
+            "title": "Kind",
+            "default": "select_scene_branch"
+          },
+          "leaf_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Leaf Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "leaf_id"
+        ],
+        "title": "SelectSceneBranchRequest"
+      },
+      "SendRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "scene_id": {
+            "type": "string",
+            "title": "Scene Id",
+            "default": ""
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "message"
+        ],
+        "title": "SendRequest"
+      },
       "SetSetupDraftDeletedRequest": {
         "properties": {
           "kind": {
@@ -7395,6 +9100,37 @@
           "deleted"
         ],
         "title": "SetSetupDraftDeletedRequest"
+      },
+      "SettingsRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "compression": {
+            "$ref": "#/components/schemas/Compression"
+          },
+          "prompts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Prompts"
+          },
+          "context_source": {
+            "type": "string",
+            "title": "Context Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "compression",
+          "prompts",
+          "context_source"
+        ],
+        "title": "SettingsRequest"
       },
       "SetupDraft-Input": {
         "properties": {
@@ -7628,6 +9364,53 @@
         "title": "Snapshot",
         "description": "Materialized API projection; only initial baselines and scene patches are persisted."
       },
+      "StageEvent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "gm",
+              "role",
+              "enter",
+              "leave",
+              "self_edit"
+            ],
+            "title": "Kind"
+          },
+          "actor_id": {
+            "type": "string",
+            "title": "Actor Id",
+            "default": ""
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "audience": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Audience"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "StageEvent"
+      },
       "StartCharacterChatRequest": {
         "properties": {
           "kind": {
@@ -7673,6 +9456,15 @@
             "format": "uuid",
             "title": "Session Id"
           },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "discussion",
+              "planning"
+            ],
+            "title": "Mode",
+            "default": "discussion"
+          },
           "title": {
             "type": "string",
             "maxLength": 100,
@@ -7704,6 +9496,52 @@
         "additionalProperties": false,
         "type": "object",
         "title": "StatePatch"
+      },
+      "StateUpdate": {
+        "properties": {
+          "character_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Character Id",
+            "description": "发生变化的既有角色 ID。"
+          },
+          "state": {
+            "$ref": "#/components/schemas/StatePatch-Output",
+            "description": "当前状态字段的实际变化。"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ProfilePatch-Output",
+            "description": "正文有明确依据的稳定档案变化。"
+          },
+          "aliases": {
+            "$ref": "#/components/schemas/CollectionPatch_Alias_-Output",
+            "description": "正文出现的称呼变化。"
+          },
+          "custom_fields": {
+            "$ref": "#/components/schemas/CollectionPatch_Entry_-Output",
+            "description": "本幕涉及的其他自定义资料变化。"
+          },
+          "new_experiences": {
+            "items": {
+              "$ref": "#/components/schemas/Experience-Output"
+            },
+            "type": "array",
+            "title": "New Experiences",
+            "description": "角色在本幕实际经历的事件。"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "变化对应的正文依据。",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "character_id"
+        ],
+        "title": "StateUpdate"
       },
       "Story": {
         "properties": {
@@ -7747,6 +9585,25 @@
             },
             "type": "array",
             "title": "Scenes"
+          },
+          "planned_scenes": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedScene"
+            },
+            "type": "array",
+            "title": "Planned Scenes"
+          },
+          "active_scene_leaf_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Scene Leaf Id"
           },
           "directions": {
             "items": {
@@ -7932,6 +9789,391 @@
         ],
         "title": "StoryView"
       },
+      "StudioBranch": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/StudioScene"
+            },
+            "type": "array",
+            "title": "Scenes"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/StudioChapter"
+            },
+            "type": "array",
+            "title": "Chapters"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "scenes",
+          "chapters"
+        ],
+        "title": "StudioBranch"
+      },
+      "StudioChapter": {
+        "properties": {
+          "entity": {
+            "$ref": "#/components/schemas/Entity"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          },
+          "summary_stale": {
+            "type": "boolean",
+            "title": "Summary Stale",
+            "default": true
+          },
+          "completed": {
+            "type": "boolean",
+            "title": "Completed",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entity"
+        ],
+        "title": "StudioChapter"
+      },
+      "StudioFieldTemplate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 0
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "fields": {
+            "$ref": "#/components/schemas/TemplateFields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "StudioFieldTemplate"
+      },
+      "StudioNovel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 0
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": "未命名小说"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created",
+            "default": false
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted",
+            "default": false
+          },
+          "world": {
+            "items": {
+              "$ref": "#/components/schemas/Entity"
+            },
+            "type": "array",
+            "title": "World"
+          },
+          "characters": {
+            "items": {
+              "$ref": "#/components/schemas/Entity"
+            },
+            "type": "array",
+            "title": "Characters"
+          },
+          "creation": {
+            "items": {
+              "$ref": "#/components/schemas/Entity"
+            },
+            "type": "array",
+            "title": "Creation"
+          },
+          "template_fields": {
+            "$ref": "#/components/schemas/TemplateFields"
+          },
+          "field_template_name": {
+            "type": "string",
+            "title": "Field Template Name",
+            "default": "空白字段"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/StudioChapter"
+            },
+            "type": "array",
+            "title": "Chapters"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/StudioScene"
+            },
+            "type": "array",
+            "title": "Scenes"
+          },
+          "branches": {
+            "items": {
+              "$ref": "#/components/schemas/StudioBranch"
+            },
+            "type": "array",
+            "title": "Branches"
+          },
+          "creation_messages": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessage"
+            },
+            "type": "array",
+            "title": "Creation Messages"
+          },
+          "compression": {
+            "$ref": "#/components/schemas/Compression"
+          },
+          "prompts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Prompts"
+          },
+          "context_source": {
+            "type": "string",
+            "title": "Context Source",
+            "default": "{{ data | tojson }}"
+          },
+          "busy": {
+            "type": "boolean",
+            "title": "Busy",
+            "default": false
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "running": {
+            "type": "string",
+            "title": "Running",
+            "default": ""
+          },
+          "error": {
+            "type": "string",
+            "title": "Error",
+            "default": ""
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls",
+            "default": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens",
+            "default": 0
+          },
+          "turn_checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StudioNovel"
+      },
+      "StudioScene": {
+        "properties": {
+          "entity": {
+            "$ref": "#/components/schemas/Entity"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "title": "Confirmed",
+            "default": false
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessage"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/StageEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "abandoned": {
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/StageEvent"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Abandoned"
+          },
+          "settings_patches": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/Patch"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Settings Patches"
+          },
+          "character_patches": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/Patch"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Character Patches"
+          },
+          "character_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/Entity"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Snapshot"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entity",
+          "chapter_id"
+        ],
+        "title": "StudioScene"
+      },
+      "TemplateFields": {
+        "properties": {
+          "world": {
+            "$ref": "#/components/schemas/EntityInput"
+          },
+          "characters": {
+            "$ref": "#/components/schemas/EntityInput"
+          },
+          "creation": {
+            "$ref": "#/components/schemas/EntityInput"
+          },
+          "chapters": {
+            "$ref": "#/components/schemas/EntityInput"
+          },
+          "scenes": {
+            "$ref": "#/components/schemas/EntityInput"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TemplateFields"
+      },
+      "ToolContract": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "模型调用的工具名称。"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "用途与调用边界，来自参数模型 description 或显式覆盖。"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Parameters",
+            "description": "由 Pydantic 导出的参数 JSON Schema。"
+          },
+          "returns": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Returns",
+            "description": "由 Pydantic 导出的公开返回值 JSON Schema。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "parameters",
+          "returns"
+        ],
+        "title": "ToolContract"
+      },
       "Trace": {
         "properties": {
           "node": {
@@ -8049,6 +10291,83 @@
           "content"
         ],
         "title": "Turn"
+      },
+      "TurnCheckpoint": {
+        "properties": {
+          "scene_id": {
+            "type": "string",
+            "title": "Scene Id",
+            "default": ""
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 0
+          },
+          "before": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Before"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message_id",
+          "before"
+        ],
+        "title": "TurnCheckpoint"
+      },
+      "TurnRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "retry",
+              "edit",
+              "withdraw"
+            ],
+            "title": "Action"
+          },
+          "scene_id": {
+            "type": "string",
+            "title": "Scene Id",
+            "default": ""
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          },
+          "preserve_state": {
+            "type": "boolean",
+            "title": "Preserve State",
+            "description": "仅用于无检查点旧消息：明确同意保留当前资料和演绎，只替换或撤回聊天记录。",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "action",
+          "message_id"
+        ],
+        "title": "TurnRequest"
       },
       "UndoRequest": {
         "properties": {
@@ -8376,6 +10695,15 @@
         ],
         "title": "ValuePatch"
       },
+      "Visibility": {
+        "type": "integer",
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "title": "Visibility"
+      },
       "WorkingDraft-Input": {
         "properties": {
           "id": {
@@ -8588,18 +10916,10 @@
             },
             "type": "array",
             "title": "Entries"
-          },
-          "premise": {
-            "type": "string",
-            "title": "Premise",
-            "readOnly": true
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "premise"
-        ],
         "title": "WorldSetting"
       },
       "WriterNote-Input": {
@@ -8830,96 +11150,10 @@
             },
             "type": "array",
             "title": "Entries"
-          },
-          "mainlines": {
-            "items": {
-              "$ref": "#/components/schemas/PlotThread-Output"
-            },
-            "type": "array",
-            "title": "Mainlines",
-            "readOnly": true
-          },
-          "subplots": {
-            "items": {
-              "$ref": "#/components/schemas/PlotThread-Output"
-            },
-            "type": "array",
-            "title": "Subplots",
-            "readOnly": true
-          },
-          "foreshadows": {
-            "items": {
-              "$ref": "#/components/schemas/Foreshadow-Output"
-            },
-            "type": "array",
-            "title": "Foreshadows",
-            "readOnly": true
-          },
-          "outline": {
-            "items": {
-              "$ref": "#/components/schemas/OutlineBeat-Output"
-            },
-            "type": "array",
-            "title": "Outline",
-            "readOnly": true
-          },
-          "future_directions": {
-            "items": {
-              "$ref": "#/components/schemas/PlotThread-Output"
-            },
-            "type": "array",
-            "title": "Future Directions",
-            "readOnly": true
-          },
-          "notes": {
-            "items": {
-              "$ref": "#/components/schemas/WriterNote-Output"
-            },
-            "type": "array",
-            "title": "Notes",
-            "readOnly": true
-          },
-          "drafts": {
-            "items": {
-              "$ref": "#/components/schemas/WorkingDraft-Output"
-            },
-            "type": "array",
-            "title": "Drafts",
-            "readOnly": true
-          },
-          "progress": {
-            "type": "string",
-            "title": "Progress",
-            "readOnly": true
-          },
-          "current_user_intent": {
-            "type": "string",
-            "title": "Current User Intent",
-            "readOnly": true
-          },
-          "custom_fields": {
-            "items": {
-              "$ref": "#/components/schemas/Entry-Output"
-            },
-            "type": "array",
-            "title": "Custom Fields",
-            "readOnly": true
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "mainlines",
-          "subplots",
-          "foreshadows",
-          "outline",
-          "future_directions",
-          "notes",
-          "drafts",
-          "progress",
-          "current_user_intent",
-          "custom_fields"
-        ],
         "title": "WriterWorkspace"
       },
       "WritingDraft": {

@@ -1,21 +1,22 @@
+
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from configured_fields import make_world, story_from_proposal
 from pydantic import SecretStr
 
 from ainovel.core.config import Settings
 from ainovel.core.domain import (
     Chapter,
+    CreationProposal,
     Draft,
     Model,
     NarrativeContext,
     PromptTemplateVersion,
     Scene,
-    Story,
-    StorySetup,
     Trace,
-    WorkflowState,
+    WritingState,
 )
 from ainovel.llm.client import OpenAIModel
 from ainovel.llm.errors import StructuredOutputError
@@ -236,7 +237,7 @@ async def test_real_adapter_validates_assistant_response_and_records_usage() -> 
         assert body.tools[0].function.parameters.root == Draft.model_json_schema()
         assert body.tool_choice.function.name == body.tools[0].function.name == "submit_Draft"
         assert "response_format" not in body.model_dump()
-        assert "内部推理链" in body.messages[1].content
+        assert "context_field_schema" in body.messages[1].content
         return httpx.Response(
             200,
             content=ChatResponse(
@@ -310,8 +311,8 @@ async def test_full_prompt_source_is_rendered_once_pinned_in_trace_and_kept_acro
         assert len(bodies) == len(sink.traces) == 2
         assert bodies[0].messages[0].content == "你是的作者，要求：保留 {{ 未渲染内容 }}。"
         assert bodies[0].messages[0].content == bodies[1].messages[0].content
-        assert bodies[0].messages[1].content.startswith("协议约束：")
-        assert bodies[0].messages[2].content == '{"instruction":"保留 {{ 未渲染内容 }}"}'
+        assert "context_field_schema" in bodies[0].messages[1].content
+        assert '{"instruction":"保留 {{ 未渲染内容 }}"}' in bodies[0].messages[2].content
         assert all("writing:v7:" in trace.prompt_version for trace in sink.traces)
     finally:
         await model.close()
@@ -344,7 +345,7 @@ async def test_finalization_missing_optional_explanation_does_not_retry_or_drop_
     )
     try:
         result = await model.generate(
-            FinalizationResult, "extraction", Input(instruction="整理正文事实"), uuid4()
+            FinalizationResult, "writing", Input(instruction="整理正文事实"), uuid4()
         )
         assert result.extraction.decision_summary == ""
         assert result.extraction.updates[0].character_id == character_id
@@ -365,9 +366,9 @@ def test_narrative_prompt_excludes_unretrieved_old_chapters_and_snapshot_histori
     chapter = Chapter(title="第一章")
     old = Scene(chapter_id=chapter.id, title="旧场景", text="不应自动注入的早期正文", summary="旧")
     recent = Scene(chapter_id=chapter.id, title="近期", text="近期正文", summary="近期")
-    state = WorkflowState(
+    state = WritingState(
         command_id=uuid4(),
-        story=Story(setup=StorySetup(title="书", world="城"), chapters=[chapter], scenes=[old, recent]),
+        story=story_from_proposal(proposal=CreationProposal(title="书", world=make_world('城')), chapters=[chapter], scenes=[old, recent]),
         instruction="继续",
         context=NarrativeContext(recent_scenes=[recent]),
     )

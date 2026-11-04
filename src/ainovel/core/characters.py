@@ -3,10 +3,9 @@
 from typing import Literal
 from uuid import UUID, uuid4
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from ainovel.core.base import Model
-from ainovel.core.legacy import PROFILE_FIELDS, STATE_FIELDS, migrate_entries
 from ainovel.core.records import CollectionPatch, CustomField, Entry, Record, merge_records
 
 
@@ -17,19 +16,11 @@ class Alias(Record):
 class Profile(Model):
     entries: list[Entry] = Field(default_factory=list)
 
-    @model_validator(mode="before")
-    @classmethod
-    def legacy_profile(cls, value: object) -> object:
-        return migrate_entries(value, PROFILE_FIELDS, "profile")
 
 
 class ProfilePatch(Model):
     entries: CollectionPatch[Entry] = Field(default_factory=CollectionPatch[Entry])
 
-    @model_validator(mode="before")
-    @classmethod
-    def legacy_patch(cls, value: object) -> object:
-        return migrate_entries(value, PROFILE_FIELDS, "profile", patch=True)
 
     def apply(self, profile: Profile) -> Profile:
         result = profile.model_copy(deep=True)
@@ -66,20 +57,6 @@ class Experience(Model):
     keywords: list[str] = Field(default_factory=list)
     entries: list[Entry] = Field(default_factory=list)
 
-    @model_validator(mode="before")
-    @classmethod
-    def legacy_experience(cls, value: object) -> object:
-        from ainovel.core.legacy import LegacyField
-
-        return migrate_entries(
-            value,
-            (
-                LegacyField(name="interpretation", label="当时的理解", kind="scalar"),
-                LegacyField(name="emotional_impact", label="当时的感受", kind="scalar"),
-                LegacyField(name="custom_fields", label=""),
-            ),
-            "experience",
-        )
 
 
 class CharacterGoal(Record):
@@ -92,19 +69,11 @@ class CharacterGoal(Record):
 class CharacterState(Model):
     entries: list[Entry] = Field(default_factory=list)
 
-    @model_validator(mode="before")
-    @classmethod
-    def legacy_state(cls, value: object) -> object:
-        return migrate_entries(value, STATE_FIELDS, "state")
 
 
 class StatePatch(Model):
     entries: CollectionPatch[Entry] = Field(default_factory=CollectionPatch[Entry])
 
-    @model_validator(mode="before")
-    @classmethod
-    def legacy_patch(cls, value: object) -> object:
-        return migrate_entries(value, STATE_FIELDS, "state", patch=True)
 
     def apply(self, state: CharacterState) -> CharacterState:
         result = state.model_copy(deep=True)

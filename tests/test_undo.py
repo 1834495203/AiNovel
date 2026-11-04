@@ -19,7 +19,6 @@ from ainovel.core.domain import (
     InterviewRequest,
     ReindexRequest,
     RejectRewriteRequest,
-    ResolveCharacterRequest,
     RestoreStoryRequest,
     RevertRequest,
     RewriteRequest,
@@ -34,10 +33,10 @@ from ainovel.service.undo import UndoService
 pytestmark = pytest.mark.skipif(os.getenv("AINOVEL_INTEGRATION") != "1", reason="Local PostgreSQL/Redis")
 
 
-async def undo(harness: Harness):
-    state = await UndoService(harness.runtime.store).state(harness.story_id)
+async def undo(harness: Harness, scope=None):
+    state = await UndoService(harness.runtime.store).state(scope or harness.story_id)
     assert state.available
-    result = await harness.execute(UndoRequest(expected_operation_id=state.operation_id))
+    result = await harness.execute(UndoRequest(expected_operation_id=state.operation_id, scope_id=scope))
     assert result.status == "completed", result.error
     return result
 
@@ -60,7 +59,7 @@ async def test_continuous_undo_restores_story_chat_proposals_and_creation() -> N
             )
         )
         assert empty.output.chat_session_id == session_id
-        await undo(h)
+        await undo(h, session_id)
         assert (await h.runtime.store.command(empty.submission.id)).undone
         chat = await h.execute(
             CharacterChatRequest(
@@ -70,7 +69,7 @@ async def test_continuous_undo_restores_story_chat_proposals_and_creation() -> N
                 message="你在想什么",
             )
         )
-        await undo(h)
+        await undo(h, session_id)
         assert (await h.runtime.store.command(chat.submission.id)).undone
         assert not await h.runtime.store.chat_history(chat.submission)
         assert (await h.runtime.store.head(h.story_id)).revision_id == directed
@@ -92,9 +91,11 @@ async def test_continuous_undo_restores_story_chat_proposals_and_creation() -> N
         await undo(h)
         assert (await h.runtime.store.head(h.story_id)).story == generated.story
         await undo(h)
-        assert (await h.runtime.store.head(h.story_id)).revision_id == initial
+        assert not (await h.runtime.store.head(h.story_id)).story.scenes
         assert await h.runtime.store.revisions(h.story_id)  # Historical artifacts survive.
         await undo(h)  # Remove the waiting draft after undoing its confirmation.
+        await undo(h)  # Remove the independently prepared scene.
+        assert h.head == initial
         await undo(h)
         with pytest.raises(StoryUnavailableError):
             await h.runtime.store.head(h.story_id)
@@ -103,24 +104,33 @@ async def test_continuous_undo_restores_story_chat_proposals_and_creation() -> N
         await h.cleanup()
 
 
-async def test_undo_npc_rejection_and_delete_restores_waiting_task() -> None:
-    h = Harness()
+async def test_delete_and_discard_undo_restore_the_pending_draft() -> None:
+    from ainovel.core.domain import ReviewDraftRequest
+
+    h = Harness(auto_confirm=False)
     await h.runtime.store.initialize()
     try:
         await h.create()
-        generation = await h.execute(GenerateRequest(instruction="引入一个新角色 NPC"))
+        generation = await h.execute(GenerateRequest(instruction="写下一幕"))
         await h.execute(DeleteStoryRequest())
         assert (await h.runtime.store.command(generation.submission.id)).status == "failed"
         await undo(h)
         parent = await h.runtime.store.command(generation.submission.id)
-        assert parent.status == "waiting" and parent.output.approval_phase == "consent"
-        await h.execute(
-            ResolveCharacterRequest(generation_command_id=generation.submission.id, decision="reject")
+        assert parent.status == "waiting" and parent.output.writing_draft is not None
+        discarded = await h.execute(
+            ReviewDraftRequest(
+                generation_command_id=generation.submission.id,
+                expected_draft_version=parent.output.writing_draft.version,
+                decision="discard",
+            )
         )
+        assert discarded.status == "completed", discarded.error
         await undo(h)
         parent = await h.runtime.store.command(generation.submission.id)
         assert parent.status == "waiting" and not parent.undone
-        assert not (await h.runtime.store.checkpoint(parent.submission.id)).rejected_character
+        assert parent.output.writing_draft.status == "pending"
+        await h.worker.process(generation.submission.id)
+        assert (await h.runtime.store.command(generation.submission.id)).status == "waiting"
     finally:
         await h.cleanup()
 
@@ -157,64 +167,10 @@ async def test_failed_commands_are_undoable_and_pending_work_blocks_undo() -> No
         assert (await h.runtime.store.command(pending.id)).undone
         await undo(h)
         assert (await h.runtime.store.command(failed.submission.id)).undone
-        await undo(h)
+        await undo(h)  # Confirmed prose.
+        await undo(h)  # Pending draft.
+        await undo(h)  # Prepared scene.
         assert h.head == initial
-    finally:
-        await h.cleanup()
-
-
-async def test_undo_npc_steps_restores_checkpoint_and_cancels_queued_resume() -> None:
-    h = Harness()
-    await h.runtime.store.initialize()
-    try:
-        await h.create()
-        before = h.head
-        generation = await h.execute(GenerateRequest(instruction="引入一个新角色 NPC"))
-        assert generation.status == "waiting"
-        consent = await h.execute(
-            ResolveCharacterRequest(generation_command_id=generation.submission.id, decision="consent")
-        )
-        await h.execute(
-            ResolveCharacterRequest(
-                generation_command_id=generation.submission.id,
-                decision="accept",
-                character=consent.output.character,
-            )
-        )
-        # Acceptance is independently undoable before its queued generation is consumed.
-        await undo(h)
-        parent = await h.runtime.store.command(generation.submission.id)
-        assert parent.status == "waiting" and parent.output.approval_phase == "profile"
-        await h.worker.process(generation.submission.id)  # Stale queue delivery must do nothing.
-        assert (await h.runtime.store.command(generation.submission.id)).status == "waiting"
-        await h.execute(
-            ResolveCharacterRequest(
-                generation_command_id=generation.submission.id,
-                decision="accept",
-                character=consent.output.character,
-            )
-        )
-        await h.worker.process(generation.submission.id)
-        await h.confirm_generation(generation.submission.id)
-        h.head = (await h.runtime.store.head(h.story_id)).revision_id
-        assert len((await h.runtime.store.head(h.story_id)).story.characters) == 2
-        await undo(h)
-        assert h.head == before
-        await undo(h)  # Undo the newly produced waiting draft, then the NPC approval.
-        await undo(h)
-        parent = await h.runtime.store.command(generation.submission.id)
-        assert not parent.undone and parent.output.approval_phase == "profile"
-        await undo(h)
-        parent = await h.runtime.store.command(generation.submission.id)
-        assert parent.output.approval_phase == "consent"
-        checkpoint = await h.runtime.store.checkpoint(generation.submission.id)
-        assert checkpoint.approval_phase == "consent" and checkpoint.approved_character is None
-        await undo(h)
-        parent = await h.runtime.store.command(generation.submission.id)
-        assert parent.undone and parent.status == "failed"
-        assert any(
-            item.event.type == "command.undone" for item in await h.runtime.store.events(parent.submission.id)
-        )
     finally:
         await h.cleanup()
 

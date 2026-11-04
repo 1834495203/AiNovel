@@ -5,11 +5,11 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from ainovel.core.agent import AgentAction, AgentContext
 from ainovel.core.config import Settings
-from ainovel.core.discussion import DiscussionAction, DiscussionContext
 from ainovel.core.domain import PromptTask, PromptTemplateVersion
 from ainovel.core.ports import TraceSink
-from ainovel.llm.discussion import DiscussionResultDecoder, build_discussion_request
+from ainovel.llm.agent import AgentResultDecoder, build_agent_request
 from ainovel.llm.gateway import ModelGateway
 from ainovel.llm.structured import StructuredResultDecoder, build_structured_request
 from ainovel.llm.transport import ModelTransport, OpenAICompatibleTransport
@@ -38,15 +38,15 @@ class LLMService:
         request = build_structured_request(self.settings, schema, task, context, prompt_template)
         return await self.gateway.complete(request, StructuredResultDecoder(schema), command_id)
 
-    async def choose_discussion_tool(
+    async def choose_agent_tool(
         self,
-        context: DiscussionContext,
+        context: AgentContext,
         command_id: UUID,
         *,
         prompt_template: PromptTemplateVersion | None = None,
-    ) -> DiscussionAction:
-        request = build_discussion_request(self.settings, context, prompt_template)
-        return await self.gateway.complete(request, DiscussionResultDecoder(), command_id)
+    ) -> AgentAction:
+        request = build_agent_request(self.settings, context, prompt_template)
+        return await self.gateway.complete(request, AgentResultDecoder(task=getattr(context,"task","scene_planning" if context.planning_mode else "discussion")), command_id)
 
     async def embed(self, texts: list[str], command_id: UUID) -> list[list[float]]:
         return await self.gateway.embed(texts, command_id)

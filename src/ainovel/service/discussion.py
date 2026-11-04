@@ -3,21 +3,17 @@
 from contextlib import aclosing
 
 from ainovel.core.discussion import (
-    DiscussionContext,
-    DiscussionExcerpt,
     DiscussionRequest,
     DiscussionResult,
     DiscussionSession,
     DiscussionToolResult,
-    ReplyAction,
-    SearchStoryAction,
+    SaveScenePlansAction,
     StartDiscussionRequest,
 )
-from ainovel.core.domain import CommandOutput, CommandSubmission, Event, Trace
+from ainovel.core.domain import CommandOutput, CommandSubmission
 from ainovel.core.errors import ConflictError
 from ainovel.mapper.discussions import DiscussionRepository
 from ainovel.service.commands import Handler
-from ainovel.service.discussion_tools import context_story
 from ainovel.service.prompt_templates import resolve_command_template
 
 
@@ -34,7 +30,7 @@ class StartDiscussionHandler(Handler[StartDiscussionRequest]):
         return CommandOutput(
             story_id=submission.story_id,
             discussion_session=DiscussionSession(
-                id=request.session_id, story_id=submission.story_id, title=request.title
+                id=request.session_id, story_id=submission.story_id, title=request.title, mode=request.mode
             ),
             message="已创建故事讨论会话",
         )
@@ -54,61 +50,79 @@ class DiscussionHandler(Handler[DiscussionRequest]):
         history = await DiscussionRepository(store).history(submission.story_id, request.session_id)
         latest = await store.head(submission.story_id)
         prompt_template = await resolve_command_template(
-            store, submission.id, submission.story_id, "discussion"
+            store,
+            submission.id,
+            submission.story_id,
+            "scene_planning" if request.mode == "planning" else "discussion",
         )
+        if request.mode == "planning":
+            session = next(
+                (
+                    item
+                    for item in await DiscussionRepository(store).sessions(submission.story_id)
+                    if item.id == request.session_id
+                ),
+                None,
+            )
+            if session is None or session.mode != request.mode:
+                raise ValueError("会话类型不匹配，请打开正确的设定会话")
+        from ainovel.core.agent import SubmitCreationAction, SubmitDraftAction
+        from ainovel.service.agent_loop import context_for, read_tool, run_agent
+
         working = latest.story.model_copy(deep=True)
-        results: list[DiscussionToolResult] = []
-        for _ in range(self.services.settings.discussion_max_steps):
-            context = DiscussionContext(
-                story=context_story(working, latest.revision_id, self.services.settings.recent_scenes),
+        base = working.model_copy(deep=True)
+        changed = False
+        results = []
+        task = "scene_planning" if request.mode == "planning" else "discussion"
+
+        def build(items):
+            return context_for(
+                base,
+                latest.revision_id,
+                task,
+                request.message,
                 history=history,
-                message=request.message,
-                tool_results=results,
+                results=items,
+                recent=self.services.settings.recent_scenes,
             )
-            action = await self.services.model.choose_discussion_tool(
-                context, submission.id, prompt_template=prompt_template
-            )
-            if isinstance(action, ReplyAction):
-                result = DiscussionResult(
-                    session_id=request.session_id, reply=action.reply,
-                    read_revision_id=latest.revision_id, settings_changed=False, tool_results=results,
-                )
-                return CommandOutput(story_id=submission.story_id, discussion=result, message="讨论已保存")
-            summary = (
-                "按需召回小说内容"
-                if isinstance(action, SearchStoryAction)
-                else "拒绝修改：故事讨论只读"
-            )
-            await store.append_event(
-                Event(
-                    command_id=submission.id,
-                    actor="ai",
-                    type="step.started",
-                    trace=Trace(
-                        node=action.kind, summary=summary, structured_input=action.arguments.model_dump_json()
-                    ),
-                )
-            )
-            if isinstance(action, SearchStoryAction):
-                chunks = await self.services.retrieval.narrative(
-                    latest.revision_id, action.arguments.query, submission.id
-                )
-                outcome = DiscussionToolResult(
-                    name="search_story",
-                    message=f"召回 {len(chunks)} 条内容，已去重并按故事时间排序",
-                    excerpts=[DiscussionExcerpt(title=chunk.kind, text=chunk.content) for chunk in chunks],
-                )
-            else:
-                raise ValueError("故事讨论只能查询和讨论；资料修改请回到写幕流程，本轮未修改任何资料")
-            results.append(outcome)
-            await store.append_event(
-                Event(
-                    command_id=submission.id,
-                    actor="ai",
-                    type="step.completed",
-                    trace=Trace(
-                        node=action.kind, summary="工具已返回", structured_output=outcome.model_dump_json()
-                    ),
-                )
-            )
-        raise ValueError("讨论达到工具调用上限，本轮未保存修改，请缩小讨论范围后重试")
+
+        async def execute(action):
+            nonlocal working, changed
+            if isinstance(action, SaveScenePlansAction) and request.mode == "planning":
+                from ainovel.service.scene_planning import apply_scene_batch
+
+                try:
+                    candidate = working.model_copy(deep=True)
+                    apply_scene_batch(candidate, action.arguments)
+                    working = candidate
+                    changed = changed or bool(
+                        action.arguments.create or action.arguments.update or action.arguments.select_leaf_id
+                    )
+                    return DiscussionToolResult(
+                        name="save_scene_plans",
+                        message="幕修改已暂存，本轮结束时提交。",
+                        affected_scene_ids=[
+                            n.id for n in [*action.arguments.create, *action.arguments.update]
+                        ],
+                    )
+                except ValueError as error:
+                    return DiscussionToolResult(name="save_scene_plans", success=False, message=str(error))
+            return await read_tool(self.services, working, latest.revision_id, action, submission.id)
+
+        action = await run_agent(
+            self.services, submission.id, task, prompt_template, build, execute, results=results
+        )
+        if isinstance(action, (SubmitDraftAction, SubmitCreationAction)):
+            raise ValueError("本会话不能提交正文或创建小说")
+        result = DiscussionResult(
+            session_id=request.session_id,
+            reply=action.reply,
+            read_revision_id=latest.revision_id,
+            settings_changed=changed,
+            tool_results=results,
+        )
+        if changed:
+            if submission.base_revision_id != latest.revision_id:
+                raise ConflictError("幕设定已被其他会话修改，请刷新后重新提交，本轮未保存")
+            return await self.services.commit(submission, working, "保存幕设定", discussion=result)
+        return CommandOutput(story_id=submission.story_id, discussion=result, message="会话已保存")

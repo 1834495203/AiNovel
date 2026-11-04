@@ -38,7 +38,6 @@ class Runtime:
         self.bus = CommandBus(self.services)
 
     async def close(self) -> None:
-        await self.services.workflow.checkpoints.close()
         if isinstance(self.model, LLMService):
             await self.model.close()
         if self.embedding_model is not None:

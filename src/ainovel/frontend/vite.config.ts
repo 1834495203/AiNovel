@@ -10,6 +10,6 @@ export default defineConfig({
     outDir: "../web/ui",
     emptyOutDir: true,
     sourcemap: false,
-    rollupOptions: { output: { manualChunks: { vue: ["vue"], "naive-ui": ["naive-ui"], lucide: ["@lucide/vue"] } } },
+    rollupOptions: { output: { manualChunks: { vue: ["vue"], "naive-ui": ["naive-ui"], icons: ["@lucide/vue"] } } },
   },
 });

@@ -3,11 +3,10 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from ainovel.core.discussion import DiscussionAction, DiscussionContext
+from ainovel.core.agent import AgentAction, AgentContext
 from ainovel.core.domain import (
     ContextChunk,
     Extraction,
-    PromptTask,
     PromptTemplateVersion,
     Revision,
     Story,
@@ -18,23 +17,13 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class LanguageModel(Protocol):
-    async def generate(
+    async def choose_agent_tool(
         self,
-        schema: type[T],
-        task: PromptTask,
-        context: BaseModel,
+        context: AgentContext,
         command_id: UUID,
         *,
         prompt_template: PromptTemplateVersion | None = None,
-    ) -> T: ...
-
-    async def choose_discussion_tool(
-        self,
-        context: DiscussionContext,
-        command_id: UUID,
-        *,
-        prompt_template: PromptTemplateVersion | None = None,
-    ) -> DiscussionAction: ...
+    ) -> AgentAction: ...
 
 
 class Embedder(Protocol):

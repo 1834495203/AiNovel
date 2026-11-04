@@ -20,7 +20,7 @@ from ainovel.core.domain import (
     Plan,
     RevisionPlan,
     StoryMaintenance,
-    WorkflowState,
+    WritingState,
 )
 from ainovel.core.fields import FieldDefinition
 from ainovel.core.records import (
@@ -40,8 +40,10 @@ from ainovel.core.text_edits import TextEdit
 
 
 class Message(Model):
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool"]
     content: str
+    tool_call_id: str | None = None
+    tool_calls: list["ToolCall"] | None = None
 
 
 class ToolParameters(RootModel[JsonValue]):
@@ -77,8 +79,8 @@ class ChatBody(Model):
     messages: list[Message]
     temperature: float = 0.7
     max_tokens: int = Field(default=8192, ge=1)
-    tools: list[ToolDefinition] = Field(min_length=1)
-    tool_choice: ToolChoice | Literal["auto"]
+    tools: list[ToolDefinition] | None = None
+    tool_choice: ToolChoice | Literal["auto"] | None = None
 
 
 class DeepSeekChatBody(ChatBody):
@@ -101,6 +103,9 @@ class ProviderMessage(BaseModel):
     content: str | None = None
     reasoning_content: str | None = None
     tool_calls: list[ToolCall] = Field(default_factory=list)
+
+
+Message.model_rebuild()
 
 
 class Choice(BaseModel):
@@ -147,7 +152,7 @@ class EmbeddingResponse(BaseModel):
 
 
 class TextResult(Model):
-    text: str
+    text: str = Field(description='本次请求的文本结果。')
 
 
 class CharacterBrief(Model):
@@ -204,7 +209,7 @@ class NarrativeInput(Model):
     revision_plan: RevisionPlan | None
 
     @classmethod
-    def from_state(cls, state: WorkflowState) -> "NarrativeInput":
+    def from_state(cls, state: WritingState) -> "NarrativeInput":
         writer = (
             state.plan.writer_patch.apply(state.story.writer)
             if state.plan
@@ -279,20 +284,20 @@ class PlanningDecision(Model):
 class FinalizationResult(Model):
     """Confirmed-scene facts plus an optional stage-level maintenance patch."""
 
-    extraction: Extraction
-    maintenance: StoryMaintenance | None = None
+    extraction: Extraction = Field(description='最终正文中的角色变化。')
+    maintenance: StoryMaintenance | None = Field(default=None, description='需要更新的已有故事资料；无变化保持空补丁。')
 
 
 class DraftRevisionResult(Model):
     edits: list[TextEdit] = Field(
-        description="自行选择满足修改意见所需的句子或段落，仅返回实际修改；所有 original 均来自修改前同一份 draft.text，片段不得重叠；无需修改时返回空列表"
+        description="实际需要的修改列表；所有原文片段必须来自同一份修改前草稿且互不重叠。无需修改时为空。上一份结果校验失败时，它尚未应用，必须依据原草稿重新提交完整列表，不能只补交修正的一项。"
     )
     summary: str = Field(description="应用这些修改后整幕正文的简短事实摘要")
 
 
 class RewriteSelectionResult(Model):
-    replacement: str = Field(min_length=1)
-    summary: str
+    replacement: str = Field(min_length=1, description='替换用户选区的完整新文本。')
+    summary: str = Field(description='改写后本幕实际发生事件的摘要。')
 
 
 class EntryPromptBrief(Model):
@@ -446,8 +451,8 @@ class FinalizationInput(Model):
     material_fields: list[MaterialFieldsBrief] = Field(default_factory=list)
 
 
-def project_context(schema: type[Model], state: WorkflowState, maintenance_interval: int = 5) -> Model:
-    """Build a node-specific context instead of serializing WorkflowState wholesale."""
+def project_context(schema: type[Model], state: WritingState, maintenance_interval: int = 5) -> Model:
+    """Build a node-specific context instead of serializing WritingState wholesale."""
 
     def entry_brief(entry: Entry) -> EntryPromptBrief:
         return EntryPromptBrief(
@@ -689,7 +694,7 @@ def project_context(schema: type[Model], state: WorkflowState, maintenance_inter
     return NarrativeInput.from_state(state)
 
 
-def maintenance_due(state: WorkflowState, interval: int = 5) -> bool:
+def maintenance_due(state: WritingState, interval: int = 5) -> bool:
     """True at story start, an explicit deep turn/chapter boundary, or fallback cadence."""
 
     if not state.story.scenes or (state.intent and state.intent.route == "deliberate") or state.new_chapter:

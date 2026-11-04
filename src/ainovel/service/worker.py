@@ -49,15 +49,6 @@ class Worker:
             return
         if view.undone or view.status not in ("queued", "running"):
             return
-        if view.submission.payload.kind in ("generate", "review_draft"):
-            # Checkpoint schema migration may build concurrent indexes. Do this before
-            # opening the command lease transaction, which would otherwise block migration.
-            try:
-                await self.runtime.services.workflow.checkpoints.initialize()
-            except Exception as error:
-                logger.exception("Checkpoint initialization failed")
-                await store.fail(command_id, f"{type(error).__name__}: {error}")
-                return
         async with aclosing(store.claim_lock(command_id)) as locks:
             async for _session in locks:
                 view = await self.load_command(command_id)

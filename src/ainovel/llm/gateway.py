@@ -64,7 +64,7 @@ class ModelGateway:
                 if attempt > self.settings.llm_output_retries:
                     raise StructuredOutputError(
                         f"模型未通过 {request.metadata.error_label} 工具参数校验，已自动重试 {attempt - 1} 次。"
-                        f"原因：{self.output_error_reason(error)}。未提交本次结果，可在运行历史中重试。"
+                        f"原因：{self.output_error_reason(error)}。这次回复未执行；此前已保存的进度仍保留。"
                     ) from error
                 details = (
                     json.dumps(

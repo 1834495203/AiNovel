@@ -4,11 +4,11 @@ import os
 from uuid import uuid4
 
 import pytest
+from configured_fields import make_world
 from sqlalchemy import delete, text
 from test_integration import Harness
 
-from ainovel.bootstrap.runtime import Runtime
-from ainovel.core.characters import ProfilePatch, Snapshot, StatePatch
+from ainovel.core.characters import Alias, ProfilePatch, Snapshot, StatePatch
 from ainovel.core.domain import (
     CharacterEdit,
     CommandOutput,
@@ -17,11 +17,8 @@ from ainovel.core.domain import (
     CreationProposal,
     GenerateRequest,
     InterviewRequest,
-    Plan,
     RecoverCommandRequest,
-    ResolveCharacterRequest,
     Story,
-    StoryMaintenance,
     Turn,
     UndoRequest,
     UpdateStoryRequest,
@@ -30,22 +27,18 @@ from ainovel.core.records import (
     CollectionPatch,
     CustomField,
     Entry,
-    PlotThread,
-    Preference,
     PreferencePatch,
     StoryMetadataPatch,
     WorldPatch,
     WriterPatch,
 )
 from ainovel.llm.mock import MockModel
-from ainovel.llm.schemas import NarrativeInput
 from ainovel.mapper.models import CommandRow
 from ainovel.service.undo import UndoService
-from ainovel.service.worker import Worker
 
 
 def test_typed_collection_patch_keeps_unmodified_records_and_rejects_conflicts() -> None:
-    world = CreationProposal(world="城市").world
+    world = CreationProposal(world=make_world("城市")).world
     rule = Entry(name="规则", value="魔法需要代价")
     world = WorldPatch(entries=CollectionPatch[Entry](upsert=[rule])).apply(world)
     changed = rule.model_copy(update={"description": "代价需要支付记忆", "reason": "用户修改"})
@@ -54,99 +47,46 @@ def test_typed_collection_patch_keeps_unmodified_records_and_rejects_conflicts()
     assert next(item for item in world.entries if item.id == rule.id) == changed
     with pytest.raises(ValueError):
         CollectionPatch[Entry](upsert=[changed], remove=[rule.id])
-    assert StatePatch(emotion="紧张").apply(Snapshot(character_id=uuid4()).state).entries[0].value == "紧张"
+    assert (
+        StatePatch(entries=CollectionPatch[Entry](upsert=[Entry(name="情绪", value="紧张")]))
+        .apply(Snapshot(character_id=uuid4()).state)
+        .entries[0]
+        .value
+        == "紧张"
+    )
 
 
-def test_legacy_story_and_workflow_decode_without_setup_or_full_scene_snapshots() -> None:
-    character_id, scene_id, chapter_id, snapshot_id = uuid4(), uuid4(), uuid4(), uuid4()
-    legacy = {
-        "id": str(uuid4()),
-        "setup": {
-            "title": "旧小说",
-            "world": "都市",
-            "preferences": ["慢热"],
-            "dislikes": ["降智"],
-            "characters": [],
-        },
-        "characters": [
-            {
-                "id": str(character_id),
-                "name": "林初",
-                "aliases": ["小林"],
-                "profile": {"background": "学生", "personality": "谨慎", "fears": ["失去朋友"]},
-            }
-        ],
-        "outline": ["相遇"],
-        "chapters": [{"id": str(chapter_id), "title": "第一章"}],
-        "initial_snapshots": [{"character_id": str(character_id)}],
-        "scenes": [
-            {
-                "id": str(scene_id),
-                "chapter_id": str(chapter_id),
-                "title": "第一幕",
-                "text": "故事",
-                "summary": "遇见",
-                "snapshots": [
-                    {
-                        "id": str(snapshot_id),
-                        "character_id": str(character_id),
-                        "scene_id": str(scene_id),
-                        "state": {"emotion": "好奇", "knowledge": ["得知来信"]},
-                        "experiences": [],
-                    }
-                ],
-            }
-        ],
-    }
-    # Stable IDs are important: reopening an old version must not fabricate new entities.
-    import json
+def test_old_story_schema_is_rejected():
+    from pydantic import ValidationError
 
-    encoded = json.dumps(legacy)
-    first, second = Story.model_validate_json(encoded), Story.model_validate_json(encoded)
-    assert first.snapshot(character_id, scene_id) == second.snapshot(character_id, scene_id)
-    assert first.title == "旧小说" and first.preferences.likes[0].name == "慢热"
-    assert "学生" in first.snapshot(character_id, scene_id).profile.entries[0].text()
-    assert "setup" not in first.model_dump() and "snapshots" not in first.scenes[0].model_dump()
-    assert first.scenes[0].character_patches[0].id == snapshot_id
-    assert Plan.model_validate(
-        {"story_arc": ["结局"], "chapter_plan": "", "scene_plan": "", "character_names": []}
-    ).writer_patch.outline.upsert
+    with pytest.raises(ValidationError):
+        Story.model_validate({"setup": {"title": "旧小说", "world": "都市"}})
 
 
 integration = pytest.mark.skipif(os.getenv("AINOVEL_INTEGRATION") != "1", reason="Local PostgreSQL/Redis")
 
 
 @integration
-async def test_ai_keeps_long_term_plan_and_fast_path_skips_character_consultation() -> None:
+async def test_writing_keeps_user_fields_empty_and_uses_only_one_agent() -> None:
+    from unittest.mock import AsyncMock
+
     h = Harness()
     await h.runtime.store.initialize()
     try:
         await h.create()
-        first = await h.execute(GenerateRequest(instruction="第一幕"))
-        assert first.status == "completed", first.error
+        await h.execute(GenerateRequest(instruction="第一幕"))
+        model = h.runtime.services.model
+        model.choose_agent_tool = AsyncMock(side_effect=model.choose_agent_tool)
         second = await h.execute(GenerateRequest(instruction="继续"))
         assert second.status == "completed", second.error
         story = (await h.runtime.store.head(h.story_id)).story
-        assert len(story.writer.mainlines) == 1 and len(story.writer.outline) == 3
-        assert story.writer.mainlines[0].progress and story.writer.progress
-        assert story.writer.current_user_intent == "继续"
-        assert len(story.writer.notes) == 1 and len(story.writer.drafts) == 2
-        nodes = [
-            item.event.trace.node
-            for item in await h.runtime.store.events(second.submission.id)
-            if item.event.type == "step.started" and item.event.trace
-        ]
-        assert "quick_plan" in nodes and "consult" not in nodes and "maintain" not in nodes
-        calls = []
-        for command_id in h.ids[-2:]:
-            calls.extend(
-                item.event.trace.node
-                for item in await h.runtime.store.events(command_id)
-                if item.event.type == "llm.completed" and item.event.trace
-            )
-        assert calls == ["PlanningDecision", "Draft", "FinalizationResult"]
-        state = await h.runtime.store.checkpoint(second.submission.id)
-        assert NarrativeInput.from_state(state).writer.mainlines[0].id == story.writer.mainlines[0].id
+        assert story.writer.entries == []
+        writing_calls = [c for c in model.choose_agent_tool.call_args_list if c.args[0].task == "writing"]
+        assert len(writing_calls) == 1
+        assert {c.args[0].task for c in model.choose_agent_tool.call_args_list} <= {
+            "scene_planning",
+            "writing",
+        }
     finally:
         await h.cleanup()
 
@@ -161,6 +101,20 @@ async def test_character_history_persists_deltas_alias_reasons_and_stage_profile
         first_story = (await h.runtime.store.head(h.story_id)).story
         character = first_story.characters[0]
         first_scene = first_story.scenes[0].id
+
+        class AliasModel(MockModel):
+            async def choose_agent_tool(self, context, command_id, *, prompt_template=None):
+                from ainovel.core.agent import SubmitDraftAction
+
+                action = await super().choose_agent_tool(context, command_id, prompt_template=prompt_template)
+                if isinstance(action, SubmitDraftAction):
+                    action.arguments.updates[0].aliases.upsert.append(
+                        Alias(name="小林", reason="朋友在本幕使用的称呼")
+                    )
+                return action
+
+        h.runtime.services.model = AliasModel(h.runtime.sink)
+        h.runtime.services.writing_agent.model = h.runtime.services.model
         await h.execute(GenerateRequest(instruction="朋友用绰号小林称呼主角"))
         story = (await h.runtime.store.head(h.story_id)).story
         latest = story.snapshot(character.id)
@@ -198,8 +152,8 @@ async def test_world_preferences_and_author_records_are_editable_and_atomically_
         original = h.head
         rule = Entry(name="魔法代价", value="每次施法消耗记忆", reason="用户指定")
         field = CustomField(name="其他规则", children=[CustomField(name="冷却时间", value=10)])
-        like = Preference(name="多视角", reason="用户修改偏好")
-        thread = PlotThread(name="寻找失去的记忆", next_steps=["发现缺失记忆"])
+        like = Entry(name="多视角", value=True, reason="用户修改偏好")
+        thread = Entry(name="寻找失去的记忆", value="发现缺失记忆")
         result = await h.execute(
             UpdateStoryRequest(
                 patch=StoryMetadataPatch(
@@ -207,8 +161,8 @@ async def test_world_preferences_and_author_records_are_editable_and_atomically_
                     world=WorldPatch(
                         entries=CollectionPatch[Entry](upsert=[rule, field]),
                     ),
-                    preferences=PreferencePatch(likes=CollectionPatch[Preference](upsert=[like])),
-                    writer=WriterPatch(mainlines=CollectionPatch[PlotThread](upsert=[thread])),
+                    preferences=PreferencePatch(entries=CollectionPatch[Entry](upsert=[like])),
+                    writer=WriterPatch(entries=CollectionPatch[Entry](upsert=[thread])),
                 )
             )
         )
@@ -217,7 +171,7 @@ async def test_world_preferences_and_author_records_are_editable_and_atomically_
         assert rule in current.world.entries
         assert next(item for item in current.world.entries if item.id == field.id).children[0].value == 10
         assert current.world.premise == "近未来都市"
-        assert like in current.preferences.likes and current.writer.mainlines[0] == thread
+        assert like in current.preferences.entries and current.writer.entries[0] == thread
         assert (
             next(item for item in await h.runtime.store.stories() if item.id == h.story_id).title == "新名称"
         )
@@ -418,57 +372,6 @@ async def test_invalid_checkpoint_fails_isolated_and_can_be_withdrawn_and_undone
 
 
 @integration
-async def test_native_human_in_loop_survives_new_runtime_without_restarting_planning() -> None:
-    h = Harness()
-    await h.runtime.store.initialize()
-    try:
-        await h.create()
-        pending = await h.execute(GenerateRequest(instruction="引入新角色 NPC"))
-        assert pending.status == "waiting", pending.error
-        state = await h.runtime.store.checkpoint(pending.submission.id)
-        graph = h.runtime.services.workflow.graph
-        saved = await graph.aget_state(
-            {
-                "configurable": {
-                    "thread_id": str(pending.submission.id),
-                    "checkpoint_id": state.graph_checkpoint_id,
-                }
-            }
-        )
-        assert saved.next == ("characters",) and any(task.interrupts for task in saved.tasks)
-        consent = await h.execute(
-            ResolveCharacterRequest(generation_command_id=pending.submission.id, decision="consent")
-        )
-        settings = h.runtime.settings
-        await h.runtime.close()
-        h.runtime = Runtime(settings)
-        h.worker = Worker(h.runtime, h.queue)
-        accepted = await h.execute(
-            ResolveCharacterRequest(
-                generation_command_id=pending.submission.id,
-                decision="accept",
-                character=consent.output.character,
-            )
-        )
-        assert accepted.status == "completed", accepted.error
-        await h.worker.process(pending.submission.id)
-        await h.confirm_generation(pending.submission.id)
-        finished = await h.runtime.store.command(pending.submission.id)
-        assert finished.status == "completed", finished.error
-        h.head = finished.output.revision_id
-        events = await h.runtime.store.events(pending.submission.id)
-        assert (
-            sum(
-                item.event.type == "step.started" and item.event.trace and item.event.trace.node == "plan"
-                for item in events
-            )
-            == 1
-        )
-    finally:
-        await h.cleanup()
-
-
-@integration
 async def test_creation_checklist_reports_known_missing_and_optional_fields() -> None:
     h = Harness()
     await h.runtime.store.initialize()
@@ -481,7 +384,7 @@ async def test_creation_checklist_reports_known_missing_and_optional_fields() ->
         )
         next_round = await h.execute(InterviewRequest(turns=[Turn(role="user", content="近未来海上城市")]))
         result = next_round.output.interview
-        assert result.proposal.world.premise == "近未来海上城市"
+        assert result.proposal.world.entries[0].value == "近未来海上城市"
         assert result.checklist[0].status == "defined" and result.checklist[1].status == "missing"
         created = await h.execute(CreateStoryRequest(proposal=result.proposal, confirmed=True))
         assert created.status == "completed", created.error
@@ -490,38 +393,42 @@ async def test_creation_checklist_reports_known_missing_and_optional_fields() ->
 
 
 @integration
-async def test_ai_maintenance_is_committed_with_the_scene_and_recalled_by_next_run() -> None:
-    from typing import TypeVar, cast
+async def test_prose_and_material_changes_are_submitted_together_and_confirmed_atomically() -> None:
+    from ainovel.core.agent import SubmitDraftAction
+    from ainovel.core.domain import EditFieldsRequest
+    from ainovel.core.fields import FieldTarget
 
-    from pydantic import BaseModel
-
-    T = TypeVar("T", bound=BaseModel)
     place = Entry(name="旧港", value="城里已经废弃的港口", reason="本幕正文建立的地点")
-    dislike = Preference(name="突然反转", origin="inferred", confidence=0.6, reason="用户多次要求平稳推进")
 
-    class MaintainingModel(MockModel):
-        def _result(self, schema: type[T], context: BaseModel) -> T:
-            result = super()._result(schema, context)
-            if isinstance(result, StoryMaintenance):
-                result.patch.world.entries.upsert.append(place)
-                result.patch.preferences.dislikes.upsert.append(dislike)
-            return cast(T, result)
+    class MaterialModel(MockModel):
+        async def choose_agent_tool(self, context, command_id, *, prompt_template=None):
+            action = await super().choose_agent_tool(context, command_id, prompt_template=prompt_template)
+            if isinstance(action, SubmitDraftAction):
+                action.arguments.materials.append(
+                    EditFieldsRequest(
+                        target=FieldTarget(scope="world"),
+                        patch=CollectionPatch[Entry](upsert=[place]),
+                        reason="正文带来的事实变化",
+                    )
+                )
+            return action
 
-    h = Harness()
+    h = Harness(auto_confirm=False)
     await h.runtime.store.initialize()
-    h.runtime.services.model = MaintainingModel(h.runtime.sink)
-    h.runtime.services.workflow.model = h.runtime.services.model
+    h.runtime.services.model = MaterialModel(h.runtime.sink)
+    h.runtime.services.writing_agent.model = h.runtime.services.model
     try:
         await h.create()
-        result = await h.execute(GenerateRequest(instruction="平稳推进"))
-        assert result.status == "completed", result.error
-        await h.execute(GenerateRequest(instruction="继续"))
+        generated = await h.execute(GenerateRequest(instruction="平稳推进"))
+        assert generated.status == "waiting", generated.error
+        before = await h.runtime.store.head(h.story_id)
+        assert place not in before.story.world.entries
+        confirmed = await h.confirm_generation(generated.submission.id)
+        assert confirmed.status == "completed", confirmed.error
         story = (await h.runtime.store.head(h.story_id)).story
-        assert place in story.world.entries
-        assert story.world.premise == "近未来都市"
-        assert dislike in story.preferences.dislikes
-        state = await h.runtime.store.checkpoint(h.ids[-1])
-        context = NarrativeInput.from_state(state)
-        assert place in context.world.entries and dislike in context.preferences.dislikes
+        assert place in story.world.entries and len(story.scenes) == 1
+        state = await UndoService(h.runtime.store).state(h.story_id)
+        assert (await h.execute(UndoRequest(expected_operation_id=state.operation_id))).status == "completed"
+        assert await h.runtime.store.head(h.story_id) == before
     finally:
         await h.cleanup()

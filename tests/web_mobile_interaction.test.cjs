@@ -1,0 +1,41 @@
+const {test}=require('node:test');
+const {assert,setup,create,send,removeNovel}=require('./studio_browser_helpers.cjs');
+test('phone: immediate sending feedback, retry, pinned composer and draft preservation',{skip:process.env.AINOVEL_STUDIO_BROWSER!=='1'},async()=>{
+ const {browser,page,errors}=await setup();let id;let release;
+ try{
+  id=await create(page);
+  const gate=new Promise(resolve=>release=resolve);
+  await page.route('**/api/studio/novels/*/message',async r=>{await gate;await r.continue()});
+  const input=page.getByRole('textbox',{name:'聊天消息'});
+  await input.fill('这是一条需要立即显示的构思消息。');await page.getByRole('button',{name:'发送消息',exact:true}).click();
+  await page.getByText('你 · 正在发送',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'发送消息',exact:true}).isDisabled(),true);
+  const positions=await page.evaluate(()=>({chat:document.querySelector('.chat-scroll').getBoundingClientRect().toJSON(),composer:document.querySelector('.composer-zone').getBoundingClientRect().toJSON(),width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight}));
+  assert.ok(positions.chat.bottom<=positions.composer.top+1);assert.ok(positions.composer.bottom<=844);assert.equal(positions.width,390);assert.equal(positions.height,844);
+  await page.waitForTimeout(220);await page.screenshot({path:'.tmp/mobile-send-feedback.png'});release();
+  await page.waitForFunction(()=>!document.querySelector('.thinking')&&!document.querySelector('textarea[aria-label="聊天消息"]').readOnly);
+  await page.unroute('**/api/studio/novels/*/message');let failed=false;
+  await page.route('**/api/studio/novels/*/message',r=>{if(!failed){failed=true;return r.fulfill({status:503,json:{detail:'测试连接暂不可用'}})}return r.continue()});
+  await input.fill('网络失败时也不能丢失这段输入。');await page.getByRole('button',{name:'发送消息',exact:true}).click();
+  await page.getByText('消息未发送，内容已保留。',{exact:false}).waitFor();
+  assert.equal(await input.inputValue(),'网络失败时也不能丢失这段输入。');
+  await page.getByRole('button',{name:'重试',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('.thinking')&&!document.querySelector('textarea[aria-label="聊天消息"]').readOnly);
+  assert.equal(await page.locator('.message.user .message-bubble').filter({hasText:'网络失败时也不能丢失这段输入。'}).count(),1);
+  await input.fill('还没发送，切换设定也要保留。');
+  await page.getByRole('button',{name:'设定',exact:true}).click();await page.getByRole('button',{name:'对话',exact:true}).click();
+  assert.equal(await input.inputValue(),'还没发送，切换设定也要保留。');
+  await page.locator('.budget-link').click();
+  const drawer=page.locator('.n-drawer:visible');
+  const estimation=page.waitForResponse(r=>r.url().endsWith('/estimate')&&r.request().postDataJSON()?.compression?.max_calls===4&&r.status()===200);
+  await drawer.locator('input[aria-label="调用预算"]').fill('4');await drawer.locator('input[aria-label="调用预算"]').press('Tab');await estimation;
+  await drawer.getByRole('button',{name:'保存设置',exact:true}).click();await drawer.waitFor({state:'hidden'});
+  assert.equal(await input.inputValue(),'还没发送，切换设定也要保留。');
+  await page.setViewportSize({width:390,height:480});await input.focus();
+  const box=await input.boundingBox();assert.ok(box&&box.y>=0&&box.y+box.height<=480);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight),480);
+  await page.screenshot({path:'.tmp/mobile-keyboard-height.png'});
+  await page.setViewportSize({width:320,height:640});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),320);
+  assert.deepEqual(errors,[]);
+ }finally{release?.();await removeNovel(id);await browser.close()}
+});
