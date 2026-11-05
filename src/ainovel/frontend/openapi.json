@@ -6792,6 +6792,114 @@
         ],
         "title": "PatchPart"
       },
+      "PerformanceOperation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "本幕内稳定的操作标识，由程序生成。"
+          },
+          "parent": {
+            "type": "string",
+            "title": "Parent",
+            "description": "本操作接在哪个操作之后；空字符串表示起始状态。",
+            "default": ""
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "操作类型。"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "便于定位的简短操作说明。"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "gm",
+              "role",
+              "user"
+            ],
+            "title": "Origin",
+            "description": "操作来源。"
+          },
+          "actor_id": {
+            "type": "string",
+            "title": "Actor Id",
+            "description": "角色操作所属的角色标识。",
+            "default": ""
+          },
+          "event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Event Ids",
+            "description": "本次操作产生的群聊事件标识。"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/Patch"
+            },
+            "type": "array",
+            "title": "Changes",
+            "description": "程序记录的正向 JSON Patch，不包含逆操作。"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "summary",
+          "origin",
+          "changes"
+        ],
+        "title": "PerformanceOperation"
+      },
+      "PerformanceTimeline": {
+        "properties": {
+          "base": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Base",
+            "description": "开始记录时的起始状态，重放时不修改此值。"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceOperation"
+            },
+            "type": "array",
+            "title": "Operations"
+          },
+          "head": {
+            "type": "string",
+            "title": "Head",
+            "description": "当前选中的操作；空字符串表示起始状态。",
+            "default": ""
+          },
+          "state_hash": {
+            "type": "string",
+            "title": "State Hash",
+            "description": "当前物化状态校验值，防止未记录修改被覆盖。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "base",
+          "state_hash"
+        ],
+        "title": "PerformanceTimeline"
+      },
       "Plan": {
         "properties": {
           "writer_patch": {
@@ -9374,6 +9482,7 @@
             "type": "string",
             "enum": [
               "gm",
+              "gm_direction",
               "role",
               "enter",
               "leave",
@@ -10103,6 +10212,21 @@
             "type": "string",
             "title": "Text",
             "default": ""
+          },
+          "writing_requirements": {
+            "type": "string",
+            "title": "Writing Requirements",
+            "default": ""
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PerformanceTimeline"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,

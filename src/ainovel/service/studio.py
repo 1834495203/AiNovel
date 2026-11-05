@@ -10,7 +10,8 @@ from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 
 from ainovel.core.entities import Entity
-from ainovel.core.studio import ConversationMessage, StudioAction, StudioStep, ToolOutcome
+from ainovel.core.performance_timeline import record_change, rewind, timeline_context
+from ainovel.core.studio import ConversationMessage, StudioAction, StudioStep, ToolOutcome, gm_discussion_text
 from ainovel.core.studio_state import (
     apply_patch,
     edit_self,
@@ -53,10 +54,19 @@ def resolve_character(novel, name):
     return found[0]
 
 
-def scene_data(scene):
+def scene_data(scene, *, positions=False):
     return {
         "scene": scene.entity.model_dump(mode="json"),
-        "events": [{"kind": e.kind, "actor_id": e.actor_id, "text": e.text} for e in scene.events],
+        "events": [
+            {
+                **({"id": e.id, "position": index + 1} if positions else {}),
+                "kind": e.kind,
+                "actor_id": e.actor_id,
+                "text": e.text,
+                **({"audience": e.audience} if e.kind in ("gm_direction", "self_edit") else {}),
+            }
+            for index, e in enumerate(scene.events)
+        ],
         "text": scene.text,
     }
 
@@ -94,29 +104,20 @@ def gm_context(novel, scene):
         "chapter_scenes": [
             s.entity.model_dump(mode="json") for s in novel.scenes if s.chapter_id == scene.chapter_id
         ],
-        "current_scene": {**scene_data(scene), "channel": "character_group", "audience": present(scene)},
+        "current_scene": {
+            **scene_data(scene, positions=True),
+            "channel": "character_group",
+            "audience": present(scene),
+        },
         "present": present(scene),
+        "present_count": len(present(scene)),
+        "timeline": timeline_context(scene),
         "chapters": chapters,
     }
 
 
-def conversation_history(messages, mode):
-    return [
-        Message(
-            role=m.role,
-            content=json.dumps(
-                {
-                    "channel": "user_discussion",
-                    "speaker": "user" if m.role == "user" else "gm",
-                    "text": m.content,
-                },
-                ensure_ascii=False,
-            )
-            if mode == "gm"
-            else m.content,
-        )
-        for m in messages
-    ]
+def conversation_history(messages):
+    return [Message(role=m.role, content=m.content) for m in messages]
 
 
 def build_request(settings, novel, mode, data, history=None):
@@ -236,14 +237,32 @@ class BudgetReached(Exception):
 
 
 class StudioRunner:
-    def __init__(self, novel, repository, settings, *, actor=None):
+    def __init__(self, novel, repository, settings, *, actor=None, origin="gm"):
         self.novel, self.repository, self.settings = novel, repository, settings
         self.actor = actor
         self.used = 0
         self.gateway = None
+        self.origin = origin
+
+    def change(self, scene, kind, summary, mutate, *, origin=None, actor_id=""):
+        result, operation = record_change(
+            self.novel, scene, kind, summary, mutate, origin=origin or self.origin, actor_id=actor_id
+        )
+        if isinstance(result, ToolOutcome) and operation:
+            result.data = {
+                **(result.data if isinstance(result.data, dict) else {"result": result.data}),
+                "operation": {
+                    "id": operation.id,
+                    "parent": operation.parent,
+                    "event_ids": operation.event_ids,
+                },
+            }
+        return result
 
     def send_user_message(self, scene, text):
         """Store each actual user-facing message without content-based suppression."""
+        if scene is not None:
+            text = gm_discussion_text(text)
         if not text.strip():
             return False
         message = ConversationMessage(role="assistant", content=text)
@@ -307,7 +326,7 @@ class StudioRunner:
         if mode == "gm" and data["present"] and "schedule_characters" not in calls:
             return StudioAction(
                 name="schedule_characters",
-                arguments={"characters": data["present"], "direction": "观察当前情景，自行决定发言或行动。"},
+                arguments={"characters": data["present"]},
             )
         if mode == "role":
             return StudioAction(name="reply", text=data["self"]["name"] + "：我先观察周围，再决定是否靠近。")
@@ -326,17 +345,43 @@ class StudioRunner:
 
     async def role(self, scene, character, direction):
         require_editable(self.novel, scene)
+        direction = direction.strip()
+        direction_id = ""
+        if direction:
+            event = self.change(
+                scene,
+                "gm_direction",
+                "GM 私下提示：" + character.name,
+                lambda n, s: emit(s, "gm_direction", direction, character.id, audience=[character.id]),
+                actor_id=character.id,
+            )
+            direction_id = event.id
         history = []
         while True:
-            data = role_context(self.novel, scene, character.id)
+            data = role_context(self.novel, scene, character.id, current_direction_id=direction_id)
             data["direction"] = direction
             action = await self.call("role", data, history)
             if isinstance(action, StudioAction) and action.name == "reply":
-                emit(scene, "role", action.text, character.id)
+                self.change(
+                    scene,
+                    "role_reply",
+                    character.name + "发言",
+                    lambda n, s: emit(s, "role", action.text, character.id),
+                    origin="role",
+                    actor_id=character.id,
+                )
+                await self.save_progress()
                 return action.text
             actions, text = self.begin_step(history, action)
             if text:
-                emit(scene, "role", text, character.id)
+                self.change(
+                    scene,
+                    "role_reply",
+                    character.name + "发言",
+                    lambda n, s: emit(s, "role", text, character.id),
+                    origin="role",
+                    actor_id=character.id,
+                )
             departed = False
             for item in actions:
                 if departed:
@@ -347,12 +392,30 @@ class StudioRunner:
                     args = TOOLS[item.name].model_validate(item.arguments)
                     try:
                         if item.name == "leave":
-                            emit(scene, "leave", args.reason or character.name + "离场", character.id)
+                            self.change(
+                                scene,
+                                "leave",
+                                character.name + "离场",
+                                lambda n, s: emit(
+                                    s, "leave", args.reason or character.name + "离场", character.id
+                                ),
+                                origin="role",
+                                actor_id=character.id,
+                            )
                             departed = True
                             outcome = ToolOutcome(message="已离场")
                         else:
-                            edit_self(self.novel, scene, character.id, args.operations)
-                            outcome = ToolOutcome(message="自身状态已修改，仅本次演绎生效")
+                            edited = self.change(
+                                scene,
+                                "edit_self",
+                                character.name + "更新自身字段",
+                                lambda n, s: edit_self(n, s, character.id, args.operations),
+                                origin="role",
+                                actor_id=character.id,
+                            )
+                            outcome = ToolOutcome(
+                                message="自身状态已修改，仅本次演绎生效" if edited else "字段值未发生变化"
+                            )
                     except ValueError as error:
                         outcome = ToolOutcome(success=False, message=str(error))
                 self.tool_result(history, item, outcome)
@@ -395,6 +458,44 @@ class StudioRunner:
             raise ValueError("当前模式没有该工具权限")
         args = tools_for(mode)[action.name].model_validate(action.arguments)
         novel = self.novel
+        if action.name == "rewind_performance":
+            data = rewind(self.novel, scene, steps=args.steps, target=args.target)
+            return ToolOutcome(
+                message="已从起始状态重放到选定位置；后续操作不再生效，用户讨论保留", data=data
+            )
+        if action.name == "schedule_characters":
+            if args.direction.strip() and len(args.characters) != 1:
+                raise ValueError("私下提示只发给一个角色；共有情景和引导请用 say_to_group 发到群聊")
+            replies = []
+            for name in args.characters:
+                character = resolve_character(novel, name)
+                if character.id not in present(scene):
+                    replies.append({"character": character.name, "skipped": "不在场，未运行"})
+                    continue
+                reply = await self.role(scene, character, args.direction)
+                replies.append({"character": character.name, "reply": reply})
+            return ToolOutcome(
+                message="角色回复已写入角色群聊。请用 say_to_group 描述客观结果，不要把角色回复转发给用户代替场景叙述。",
+                data={"channel": "character_group", "replies": replies},
+            )
+        if mode == "gm" and action.name != "say_to_user":
+            summaries = {
+                "say_to_group": "GM 群聊发言",
+                "reset_performance": "重置演绎",
+                "create_character": "创建角色：" + getattr(args, "name", ""),
+                "edit_fields": "修改资料：" + getattr(args, "scope", "") + " " + getattr(args, "target", ""),
+                "enter_character": "角色入场：" + getattr(args, "character", ""),
+                "remove_character": "角色离场：" + getattr(args, "character", ""),
+            }
+            return self.change(
+                scene,
+                action.name,
+                summaries[action.name],
+                lambda n, s: self.execute_atomic(mode, n, s, action, args),
+            )
+        return self.execute_atomic(mode, self.novel, scene, action, args)
+
+    def execute_atomic(self, mode, novel, scene, action, args):
         if action.name == "say_to_user":
             text = args.text
             sent = self.send_user_message(scene, text)
@@ -410,7 +511,12 @@ class StudioRunner:
             event = emit(scene, "gm", args.text)
             return ToolOutcome(
                 message="已发送到角色群聊，未写入用户讨论",
-                data={"channel": "character_group", "audience": event.audience, "sent": True},
+                data={
+                    "channel": "character_group",
+                    "audience": event.audience,
+                    "event_id": event.id,
+                    "sent": True,
+                },
             )
         elif action.name == "reset_performance":
             reset(scene)
@@ -439,19 +545,6 @@ class StudioRunner:
                 args.reason or character.name + ("入场" if entering else "离场"),
                 character.id,
             )
-        elif action.name == "schedule_characters":
-            replies = []
-            for name in args.characters:
-                character = resolve_character(novel, name)
-                if character.id not in present(scene):
-                    replies.append({"character": character.name, "skipped": "不在场，未运行"})
-                    continue
-                reply = await self.role(scene, character, args.direction)
-                replies.append({"character": character.name, "reply": reply})
-            return ToolOutcome(
-                message="角色回复已写入角色群聊。请用 say_to_group 描述客观结果，不要把角色回复转发给用户代替场景叙述。",
-                data={"channel": "character_group", "replies": replies},
-            )
         return ToolOutcome(message="完成")
 
     async def run(self, mode, scene=None, instruction=""):
@@ -460,6 +553,8 @@ class StudioRunner:
             if mode in ("writing", "summary"):
                 if mode == "writing":
                     data = scene_data(scene)
+                    data["writing_mode"] = "rewrite" if scene.text else "generate"
+                    data["previous_requirements"] = scene.writing_requirements
                     participants = {e.actor_id for e in scene.events if e.kind == "enter"}
                     data["characters"] = [
                         c.model_dump(mode="json")
@@ -468,7 +563,10 @@ class StudioRunner:
                     ]
                     data["requirements"] = instruction
                     action = await self.call(mode, data, [])
+                    if not action.text.strip():
+                        raise ValueError("模型没有返回正文")
                     scene.text = action.text
+                    scene.writing_requirements = instruction
                     next(c for c in novel.chapters if c.entity.id == scene.chapter_id).summary_stale = True
                 else:
                     chapter = next(c for c in novel.chapters if c.entity.id == instruction)
@@ -481,7 +579,7 @@ class StudioRunner:
                     chapter.summary, chapter.summary_stale = action.text, False
             else:
                 messages = scene.messages if scene else novel.creation_messages
-                history = conversation_history(messages, mode)
+                history = conversation_history(messages)
                 while True:
                     data = (
                         gm_context(novel, scene)
@@ -501,9 +599,12 @@ class StudioRunner:
                     actions, text = self.begin_step(history, action)
                     self.send_user_message(scene, text)
                     restarted = False
+                    rewind_result = None
                     for item in actions:
                         if restarted:
-                            result = ToolOutcome(success=False, message="已重置，本批次后续操作未执行")
+                            result = ToolOutcome(
+                                success=False, message="状态已重置或回溯，本批次后续操作未执行"
+                            )
                         else:
                             try:
                                 result = await self.execute(mode, scene, item)
@@ -511,10 +612,18 @@ class StudioRunner:
                                 result = ToolOutcome(success=False, message=str(error))
                         self.tool_result(history, item, result)
                         if result.success:
-                            restarted = restarted or item.name == "reset_performance"
+                            restarted = restarted or item.name in ("reset_performance", "rewind_performance")
+                            if item.name == "rewind_performance":
+                                rewind_result = (item, result)
                         await self.save_progress()
                     if restarted:
-                        history = []  # Discarded attempt results must not contaminate the new rehearsal.
+                        if rewind_result:
+                            history = conversation_history(messages)
+                            item, result = rewind_result
+                            self.begin_step(history, item)
+                            self.tool_result(history, item, result)
+                        else:
+                            history = []  # Discarded attempt results must not contaminate the new rehearsal.
         except BudgetReached:
             self.send_user_message(scene, "本轮达到调用预算，已暂停并保留进度。")
         except Exception as error:

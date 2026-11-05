@@ -39,11 +39,58 @@ def test_hash_salt_and_env_update_do_not_store_plaintext(tmp_path):
     assert verify_password(PASSWORD, first) and not verify_password("incorrect", first)
     assert not verify_password(PASSWORD, "broken")
     path = tmp_path / ".env"
-    path.write_text("LLM_API_KEY=preserve-other-secret\nACCESS_PASSWORD_HASH=old\n", encoding="utf-8")
+    path.write_text(
+        "LLM_API_KEY=preserve-other-secret\nACCESS_PASSWORD=old-plain-password\nACCESS_PASSWORD_HASH=old\n",
+        encoding="utf-8",
+    )
     configure_password(PASSWORD, path)
     text = path.read_text(encoding="utf-8")
     assert "LLM_API_KEY=preserve-other-secret" in text and PASSWORD not in text
     assert text.count("ACCESS_PASSWORD_HASH=") == 1 and "ACCESS_SESSION_SECRET=" in text
+    assert "old-plain-password" not in text and "ACCESS_PASSWORD=\n" in text
+
+
+def test_dotenv_plain_password_precedence_and_session_stability(tmp_path):
+    path = tmp_path / ".env"
+    path.write_text(
+        'ACCESS_PASSWORD="test-only-direct-password"\nACCESS_SESSION_SECRET=test-session-secret\n',
+        encoding="utf-8",
+    )
+    settings = Settings(_env_file=path, access_password_hash=SecretStr(password_hash(PASSWORD)))
+    before = AccessGate(settings)
+    assert before.enabled and before.check_password("test-only-direct-password")
+    assert not before.check_password(PASSWORD)
+    assert AccessGate(settings).valid(before.token())
+    changed = AccessGate(settings.model_copy(update={"access_password": SecretStr("new-direct-password")}))
+    assert not changed.valid(before.token())
+    assert "test-only-direct-password" not in repr(settings)
+
+
+@pytest.mark.parametrize("password", ["中文访问密码测试", " spaced-password "])
+async def test_plain_password_login_works_with_unicode_and_copy_paste(password):
+    app = create_app(
+        Settings(
+            _env_file=None,
+            access_password=SecretStr(password),
+            access_session_secret=SecretStr("test-session-secret"),
+        )
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+        assert (await client.get("/api/studio/novels")).status_code == 401
+        assert (await client.post("/login", data={"password": password})).status_code == 303
+        assert COOKIE in client.cookies
+
+
+def test_empty_plain_password_keeps_hash_fallback_and_short_password_is_rejected():
+    settings = Settings(
+        _env_file=None, access_password=SecretStr(""), access_password_hash=SecretStr(password_hash(PASSWORD))
+    )
+    assert AccessGate(settings).check_password(PASSWORD)
+    assert not AccessGate(
+        Settings(_env_file=None, access_password=SecretStr(""), access_password_hash=SecretStr(""))
+    ).enabled
+    with pytest.raises(ValueError, match="8–256"):
+        AccessGate(settings.model_copy(update={"access_password": SecretStr("short")}))
 
 
 @pytest.mark.parametrize("path", ["//evil.test", "https://evil.test", "/\\evil.test", "/\r\nLocation:evil"])

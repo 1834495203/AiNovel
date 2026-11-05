@@ -2741,6 +2741,80 @@ export interface components {
             /** Value */
             value: string;
         };
+        /** PerformanceOperation */
+        PerformanceOperation: {
+            /**
+             * Id
+             * @description 本幕内稳定的操作标识，由程序生成。
+             */
+            id?: string;
+            /**
+             * Parent
+             * @description 本操作接在哪个操作之后；空字符串表示起始状态。
+             * @default
+             */
+            parent: string;
+            /**
+             * Kind
+             * @description 操作类型。
+             */
+            kind: string;
+            /**
+             * Summary
+             * @description 便于定位的简短操作说明。
+             */
+            summary: string;
+            /**
+             * Origin
+             * @description 操作来源。
+             * @enum {string}
+             */
+            origin: "gm" | "role" | "user";
+            /**
+             * Actor Id
+             * @description 角色操作所属的角色标识。
+             * @default
+             */
+            actor_id: string;
+            /**
+             * Event Ids
+             * @description 本次操作产生的群聊事件标识。
+             */
+            event_ids?: string[];
+            /**
+             * Changes
+             * @description 程序记录的正向 JSON Patch，不包含逆操作。
+             */
+            changes: components["schemas"]["Patch"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+        };
+        /** PerformanceTimeline */
+        PerformanceTimeline: {
+            /**
+             * Base
+             * @description 开始记录时的起始状态，重放时不修改此值。
+             */
+            base: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Operations */
+            operations?: components["schemas"]["PerformanceOperation"][];
+            /**
+             * Head
+             * @description 当前选中的操作；空字符串表示起始状态。
+             * @default
+             */
+            head: string;
+            /**
+             * State Hash
+             * @description 当前物化状态校验值，防止未记录修改被覆盖。
+             */
+            state_hash: string;
+        };
         /**
          * Plan
          * @description 一幕的剧情计划。计划不是已发生事实，已有幕计划时正文直接复用。
@@ -4025,7 +4099,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "gm" | "role" | "enter" | "leave" | "self_edit";
+            kind: "gm" | "gm_direction" | "role" | "enter" | "leave" | "self_edit";
             /**
              * Actor Id
              * @default
@@ -4379,6 +4453,12 @@ export interface components {
              * @default
              */
             text: string;
+            /**
+             * Writing Requirements
+             * @default
+             */
+            writing_requirements: string;
+            timeline?: components["schemas"]["PerformanceTimeline"] | null;
         };
         /** TemplateFields */
         TemplateFields: {

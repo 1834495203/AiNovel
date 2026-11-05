@@ -39,6 +39,7 @@ def verify_password(password: str, encoded: str) -> bool:
 def configure_password(password: str, path: Path = Path(".env")) -> None:
     """Change only access settings; never print or rewrite other secrets."""
     values = {
+        "ACCESS_PASSWORD": "",
         "ACCESS_PASSWORD_HASH": password_hash(password),
         "ACCESS_SESSION_SECRET": secrets.token_urlsafe(32),
     }
@@ -63,12 +64,24 @@ def local_path(value: str) -> str:
 
 class AccessGate:
     def __init__(self, settings):
+        plain = settings.access_password.get_secret_value()
+        if plain and not 4 <= len(plain) <= 256:
+            raise ValueError("ACCESS_PASSWORD 长度需要为 4–256 个字符")
+        self.plain_digest = hashlib.sha256(plain.encode()).digest() if plain else None
         self.encoded = settings.access_password_hash.get_secret_value()
-        self.enabled = bool(self.encoded)
+        self.enabled = bool(self.plain_digest or self.encoded)
         secret = settings.access_session_secret.get_secret_value() or secrets.token_urlsafe(32)
-        self.key = hmac.digest(secret.encode(), self.encoded.encode(), "sha256")
+        identity = b"plain:" + self.plain_digest if self.plain_digest else self.encoded.encode()
+        self.key = hmac.digest(secret.encode(), identity, "sha256")
         self.ttl = settings.access_session_hours * 3600
         self.failures: dict[str, deque] = {}
+
+    def check_password(self, password: str) -> bool:
+        if len(password) > 256:
+            return False
+        if self.plain_digest is not None:
+            return hmac.compare_digest(hashlib.sha256(password.encode()).digest(), self.plain_digest)
+        return verify_password(password, self.encoded)
 
     def token(self) -> str:
         body = f"{int(time.time()) + self.ttl}.{secrets.token_hex(16)}"
@@ -144,10 +157,10 @@ class AccessGate:
             return self.page(error="登录请求格式错误", status=400)
         password = form.get("password", [""])[0]
         destination = local_path(form.get("next", ["/"])[0])
-        correct = verify_password(password, self.encoded)
+        correct = self.check_password(password)
         # Preserve deliberately spaced passwords, while tolerating whitespace from copy/paste.
         if not correct and password.strip() != password:
-            correct = verify_password(password.strip(), self.encoded)
+            correct = self.check_password(password.strip())
         if not correct:
             attempts.append(now)
             return self.page(destination, "密码不正确，请重试。", 401)

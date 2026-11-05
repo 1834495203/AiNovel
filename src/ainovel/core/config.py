@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://novel:change-me@localhost:5432/novel"
     redis_url: str = "redis://localhost:6379/0"
+    access_password: SecretStr = SecretStr("")
     access_password_hash: SecretStr = SecretStr("")
     access_session_secret: SecretStr = SecretStr("")
     access_session_hours: int = Field(default=12, ge=1, le=168)

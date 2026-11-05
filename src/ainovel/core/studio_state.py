@@ -1,5 +1,6 @@
 """Pure transitions: validated patches, role replay and interval-based visibility."""
 
+import json
 from copy import deepcopy
 
 from ainovel.core.entities import Entity, visible_entity
@@ -106,7 +107,7 @@ def role_states(novel: StudioNovel, target: StudioScene) -> dict[str, Entity]:
     return states
 
 
-def role_context(novel: StudioNovel, scene: StudioScene, character_id: str):
+def role_context(novel: StudioNovel, scene: StudioScene, character_id: str, *, current_direction_id=""):
     states = role_states(novel, scene)
     if character_id not in present(scene):
         raise ValueError("角色不在场")
@@ -116,7 +117,7 @@ def role_context(novel: StudioNovel, scene: StudioScene, character_id: str):
         events = [
             {"kind": e.kind, "actor_id": e.actor_id, "text": e.text}
             for e in item.events
-            if character_id in e.audience
+            if character_id in e.audience and e.id != current_direction_id
         ]
         if events:
             history.append({"scene": item.entity.name, "events": events})
@@ -133,7 +134,33 @@ def role_context(novel: StudioNovel, scene: StudioScene, character_id: str):
     }
 
 
-def edit_self(novel: StudioNovel, scene: StudioScene, character_id: str, operations: list[Patch]):
+def describe_self_edit(before: Entity, after: Entity) -> str:
+    def display(value):
+        return json.dumps(value, ensure_ascii=False)
+
+    before_data = before.model_dump(mode="json")
+    after_data = after.model_dump(mode="json")
+    changes = []
+    for field, key, label in (
+        ("description", "name", "描述"),
+        ("special_attributes", "key", "变量"),
+    ):
+        old = {entry[key]: entry for entry in before_data[field]}
+        new = {entry[key]: entry for entry in after_data[field]}
+        for name in dict.fromkeys([*old, *new]):
+            if name not in old:
+                changes.append(f"新增{label}「{name}」 {display(new[name])}")
+            elif name not in new:
+                changes.append(f"删除{label}「{name}」 {display(old[name])}")
+            else:
+                for prop, value in new[name].items():
+                    previous = old[name][prop]
+                    if previous != value:
+                        changes.append(f"{label}「{name}」 {prop}：{display(previous)} → {display(value)}")
+    return "\n".join(changes)
+
+
+def edit_self(novel: StudioNovel, scene: StudioScene, character_id: str, operations: list[Patch]) -> bool:
     before = role_states(novel, scene)[character_id]
     own = visible_entity(before, own=True)
     if any(
@@ -142,6 +169,9 @@ def edit_self(novel: StudioNovel, scene: StudioScene, character_id: str, operati
     ):
         raise ValueError("只能修改自己的描述或变量条目")
     candidate = Entity.model_validate(apply_patch(own.model_dump(mode="json"), operations))
+    if candidate == own:
+        return False
+    description = describe_self_edit(own, candidate)
     # Rebuild the visible portion, preserving fields the role was never allowed to read.
     for field, key_name in (("description", "name"), ("special_attributes", "key")):
         hidden = [v for v in getattr(before, field) if v.visibility == 0]
@@ -159,7 +189,8 @@ def edit_self(novel: StudioNovel, scene: StudioScene, character_id: str, operati
         ),
     ]
     scene.character_patches.setdefault(character_id, []).extend(patches)
-    emit(scene, "self_edit", "更新了自身字段", character_id, audience=[character_id])
+    emit(scene, "self_edit", description or "调整了自身字段顺序", character_id, audience=[character_id])
+    return True
 
 
 def reset(scene: StudioScene):
@@ -190,7 +221,9 @@ def fork(novel: StudioNovel, scene_id: str):
     scene = novel.scenes[-1]
     scene.confirmed = False
     scene.text = ""
+    scene.writing_requirements = ""
     reset(scene)
+    scene.timeline = None
     kept = {s.chapter_id for s in novel.scenes}
     novel.chapters = [c for c in novel.chapters if c.entity.id in kept]
     for chapter in novel.chapters:

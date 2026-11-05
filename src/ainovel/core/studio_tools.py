@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field, JsonValue
+from pydantic import Field, JsonValue, model_validator
 
 from ainovel.core.base import Model
 from ainovel.core.entities import Attribute, Description, EntityInput, Visibility
@@ -35,7 +35,9 @@ class Schedule(Model):
         min_length=1, max_length=12, description="在场角色的名字或已有 ID，按运行顺序排列。"
     )
     direction: str = Field(
-        default="", description="角色可感知的调度信息；不得包含幕后要求、别人私密信息或强制选择。"
+        default="",
+        description="只给单个被调度角色的私下提示，可提供线索或引导。公共情景和引导通过 say_to_group 发布。"
+        "多人调度时留空；不得包含幕后要求、别人私密信息或强制选择。",
     )
 
 
@@ -63,6 +65,26 @@ class Reset(Model):
     """清除本次演绎和临时角色变化；保留用户/GM 编辑的设定。"""
 
     reason: str = Field(default="", description="为何重新演绎。")
+
+
+class RewindPerformance(Model):
+    """回撤当前未确认幕的演绎。按步数回撤，或回到指定操作/群聊消息之后；统一重放正向操作，连同字段、角色进出场和在场人数一起恢复。用户讨论不删除。"""
+
+    steps: int | None = Field(
+        default=None,
+        ge=1,
+        description="回撤多少个状态操作；不填且无 target 时回撤一步。不能与 target 同时填写。",
+    )
+    target: str = Field(
+        default="",
+        description="timeline.steps 中的操作 ID，或 current_scene.events 中的消息 ID；保留该位置及之前的操作。start 表示回到开始记录的位置。只能选当前路径中的位置。",
+    )
+
+    @model_validator(mode="after")
+    def choose_one_position(self):
+        if self.steps is not None and self.target:
+            raise ValueError("steps 与 target 只能填写一个")
+        return self
 
 
 class Membership(Model):
@@ -119,6 +141,7 @@ TOOLS = {
     "schedule_characters": Schedule,
     "edit_fields": Edit,
     "reset_performance": Reset,
+    "rewind_performance": RewindPerformance,
     "enter_character": Membership,
     "remove_character": Membership,
     "create_character": CreateCharacter,
@@ -141,6 +164,7 @@ def tools_for(mode):
             "schedule_characters",
             "edit_fields",
             "reset_performance",
+            "rewind_performance",
             "enter_character",
             "remove_character",
             "create_character",

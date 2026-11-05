@@ -1,10 +1,11 @@
 """Scene-owned GM conversations and explicitly isolated rehearsal state."""
 
+import json
 from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import Field, JsonValue, field_validator, model_validator
 
 from ainovel.core.base import Model
 from ainovel.core.entities import Entity
@@ -16,6 +17,25 @@ def identity() -> str:
     return str(uuid4())
 
 
+def gm_discussion_text(content: str) -> str:
+    """Unwrap the former discussion history format if it appears in a GM reply."""
+    if not content.lstrip().startswith("{"):
+        return content
+    try:
+        message = json.loads(content)
+    except (ValueError, RecursionError):
+        return content
+    if (
+        isinstance(message, dict)
+        and message.keys() == {"channel", "speaker", "text"}
+        and message["channel"] == "user_discussion"
+        and message["speaker"] == "gm"
+        and isinstance(message["text"], str)
+    ):
+        return message["text"]
+    return content
+
+
 class Patch(Model):
     op: Literal["add", "remove", "replace", "test"] = Field(description="JSON Patch 操作。")
     path: str = Field(description="相对目标的 JSON Pointer 路径，使用 ~0/~1 转义。")
@@ -24,7 +44,7 @@ class Patch(Model):
 
 class StageEvent(Model):
     id: str = Field(default_factory=identity)
-    kind: Literal["gm", "role", "enter", "leave", "self_edit"]
+    kind: Literal["gm", "gm_direction", "role", "enter", "leave", "self_edit"]
     actor_id: str = ""
     text: str
     audience: list[str] = Field(default_factory=list)
@@ -53,6 +73,25 @@ class StudioChapter(Model):
     completed: bool = False
 
 
+class PerformanceOperation(Model):
+    id: str = Field(default_factory=identity, description="本幕内稳定的操作标识，由程序生成。")
+    parent: str = Field(default="", description="本操作接在哪个操作之后；空字符串表示起始状态。")
+    kind: str = Field(description="操作类型。")
+    summary: str = Field(description="便于定位的简短操作说明。")
+    origin: Literal["gm", "role", "user"] = Field(description="操作来源。")
+    actor_id: str = Field(default="", description="角色操作所属的角色标识。")
+    event_ids: list[str] = Field(default_factory=list, description="本次操作产生的群聊事件标识。")
+    changes: list[Patch] = Field(description="程序记录的正向 JSON Patch，不包含逆操作。")
+    created_at: datetime = Field(default_factory=now)
+
+
+class PerformanceTimeline(Model):
+    base: dict[str, JsonValue] = Field(description="开始记录时的起始状态，重放时不修改此值。")
+    operations: list[PerformanceOperation] = Field(default_factory=list)
+    head: str = Field(default="", description="当前选中的操作；空字符串表示起始状态。")
+    state_hash: str = Field(description="当前物化状态校验值，防止未记录修改被覆盖。")
+
+
 class StudioScene(Model):
     entity: Entity
     chapter_id: str
@@ -64,6 +103,20 @@ class StudioScene(Model):
     character_patches: dict[str, list[Patch]] = Field(default_factory=dict)
     character_snapshot: dict[str, Entity] | None = None
     text: str = ""
+    writing_requirements: str = ""
+    timeline: PerformanceTimeline | None = None
+
+    @field_validator("messages")
+    @classmethod
+    def read_legacy_gm_messages(cls, messages: list[ConversationMessage]) -> list[ConversationMessage]:
+        normalized = []
+        for message in messages:
+            if message.role == "assistant":
+                content = gm_discussion_text(message.content)
+                if content != message.content:
+                    message = message.model_copy(update={"content": content})
+            normalized.append(message)
+        return normalized
 
 
 class Compression(Model):

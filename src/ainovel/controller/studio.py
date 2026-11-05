@@ -11,6 +11,7 @@ from pydantic import Field
 from ainovel.core.base import Model
 from ainovel.core.entities import Attribute, Description, EntityInput
 from ainovel.core.errors import ConflictError
+from ainovel.core.performance_timeline import record_change
 from ainovel.core.studio import (
     Compression,
     ConversationMessage,
@@ -41,6 +42,13 @@ from ainovel.service.studio import (
     estimate,
     gm_context,
 )
+
+TIMELINE_PRIVATE = {"base": True, "state_hash": True, "operations": {"__all__": {"changes"}}}
+PUBLIC_NOVEL_EXCLUDE = {
+    "turn_checkpoint": {"before"},
+    "scenes": {"__all__": {"timeline": TIMELINE_PRIVATE}},
+    "branches": {"__all__": {"scenes": {"__all__": {"timeline": TIMELINE_PRIVATE}}}},
+}
 
 
 class VersionRequest(Model):
@@ -194,7 +202,7 @@ def router(store, settings):
     @api.post(
         "/novels/{key}/template",
         response_model=StudioNovel,
-        response_model_exclude={"turn_checkpoint": {"before"}},
+        response_model_exclude=PUBLIC_NOVEL_EXCLUDE,
     )
     async def apply_template(key: str, request: ApplyFieldTemplate):
         novel = await writable(key, request.version)
@@ -247,12 +255,12 @@ def router(store, settings):
             StudioFieldTemplate(name=request.name, fields=fields), create=True
         )
 
-    @api.post("/novels", response_model=StudioNovel, response_model_exclude={"turn_checkpoint": {"before"}})
+    @api.post("/novels", response_model=StudioNovel, response_model_exclude=PUBLIC_NOVEL_EXCLUDE)
     async def create():
         return await repository.create()
 
     @api.get(
-        "/novels/{key}", response_model=StudioNovel, response_model_exclude={"turn_checkpoint": {"before"}}
+        "/novels/{key}", response_model=StudioNovel, response_model_exclude=PUBLIC_NOVEL_EXCLUDE
     )
     async def novel(key: str):
         return await repository.get(key)
@@ -260,7 +268,7 @@ def router(store, settings):
     @api.post(
         "/novels/{key}/message",
         response_model=StudioNovel,
-        response_model_exclude={"turn_checkpoint": {"before"}},
+        response_model_exclude=PUBLIC_NOVEL_EXCLUDE,
     )
     async def message(key: str, request: SendRequest, tasks: BackgroundTasks):
         novel = await writable(key, request.version)
@@ -280,7 +288,7 @@ def router(store, settings):
     @api.post(
         "/novels/{key}/turn",
         response_model=StudioNovel,
-        response_model_exclude={"turn_checkpoint": {"before"}},
+        response_model_exclude=PUBLIC_NOVEL_EXCLUDE,
     )
     async def turn(key: str, request: TurnRequest, tasks: BackgroundTasks):
         novel = await writable(key, request.version)
@@ -304,7 +312,7 @@ def router(store, settings):
     @api.post(
         "/novels/{key}/control",
         response_model=StudioNovel,
-        response_model_exclude={"turn_checkpoint": {"before"}},
+        response_model_exclude=PUBLIC_NOVEL_EXCLUDE,
     )
     async def control(key: str, request: ControlRequest, tasks: BackgroundTasks):
         novel = await writable(key, request.version)
@@ -363,12 +371,14 @@ def router(store, settings):
             chapter = next(c for c in novel.chapters if c.entity.id == scene.chapter_id)
             if action == "reset":
                 require_editable(novel, scene)
-                reset(scene)
+                record_change(
+                    novel, scene, "reset_performance", "用户重置演绎", lambda n, s: reset(s), origin="user"
+                )
             elif action in ("enter", "leave"):
                 require_editable(novel, scene)
                 from ainovel.core.studio import StudioAction
 
-                await StudioRunner(novel, repository, settings).execute(
+                await StudioRunner(novel, repository, settings, origin="user").execute(
                     "gm",
                     scene,
                     StudioAction(
@@ -407,6 +417,7 @@ def router(store, settings):
                     kept = {s.chapter_id for s in novel.scenes}
                     novel.chapters = [c for c in novel.chapters if c.entity.id in kept]
                 scene.text = ""
+                scene.writing_requirements = ""
                 scene.confirmed = False
                 scene.character_snapshot = None
                 chapter.completed = False
@@ -421,18 +432,7 @@ def router(store, settings):
         await repository.save(novel)
         return novel
 
-    @api.post(
-        "/novels/{key}/edit",
-        response_model=StudioNovel,
-        response_model_exclude={"turn_checkpoint": {"before"}},
-    )
-    async def edit(key: str, request: EditRequest):
-        novel = await writable(key, request.version)
-        if novel.deleted:
-            raise ValueError("小说在回收站中")
-        scene = novel.scenes[-1] if novel.scenes else None
-        if novel.created and scene:
-            require_editable(novel, scene)
+    def apply_user_edit(novel, scene, request):
         if request.title is not None:
             novel.title = request.title.strip() or "未命名小说"
         elif request.scope == "characters" and not request.target:
@@ -462,13 +462,37 @@ def router(store, settings):
             edit_fields(novel, scene, Edit(scope=request.scope, operations=operations))
         else:
             raise ValueError("角色删除会破坏历史状态，请通过分支调整出场，不删除历史实体")
+
+    @api.post(
+        "/novels/{key}/edit",
+        response_model=StudioNovel,
+        response_model_exclude=PUBLIC_NOVEL_EXCLUDE,
+    )
+    async def edit(key: str, request: EditRequest):
+        novel = await writable(key, request.version)
+        if novel.deleted:
+            raise ValueError("小说在回收站中")
+        scene = novel.scenes[-1] if novel.scenes else None
+        if novel.created and scene:
+            require_editable(novel, scene)
+        if novel.created and scene:
+            record_change(
+                novel,
+                scene,
+                "edit_fields",
+                "用户修改小说资料",
+                lambda n, s: apply_user_edit(n, s, request),
+                origin="user",
+            )
+        else:
+            apply_user_edit(novel, scene, request)
         await repository.save(novel)
         return novel
 
     @api.post(
         "/novels/{key}/settings",
         response_model=StudioNovel,
-        response_model_exclude={"turn_checkpoint": {"before"}},
+        response_model_exclude=PUBLIC_NOVEL_EXCLUDE,
     )
     async def save_settings(key: str, request: SettingsRequest):
         novel = await writable(key, request.version)
@@ -522,9 +546,9 @@ def router(store, settings):
         history = scene.messages if scene else novel.creation_messages
         from ainovel.llm.schemas import Message
 
-        request = build_request(settings, novel, mode, data, conversation_history(history, mode))
+        request = build_request(settings, novel, mode, data, conversation_history(history))
         if message:
-            request.body.messages.extend(conversation_history([Message(role="user", content=message)], mode))
+            request.body.messages.append(Message(role="user", content=message))
         return {
             **estimate(request),
             "messages": [m.model_dump(mode="json") for m in request.body.messages],

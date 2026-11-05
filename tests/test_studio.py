@@ -216,7 +216,7 @@ async def test_gm_sends_user_messages_without_yielding_and_roles_return_to_gm():
         StudioAction(name="say_to_user", arguments={"text": "我会先观察角色如何决定。"}),
         StudioAction(
             name="schedule_characters",
-            arguments={"characters": [a.id, b.id], "direction": "各自决定是否接近灯塔"},
+            arguments={"characters": [a.id, b.id]},
         ),
         StudioAction(name="say_to_group", arguments={"text": "两人的尝试让灯塔守卫注意到了他们。"}),
         StudioAction(name="reply", text="请检查演绎"),
@@ -265,7 +265,7 @@ async def test_budget_includes_nested_roles_and_preserves_progress():
 
 
 def test_schemas_are_small_and_context_jinja_cannot_access_hidden_fields():
-    assert len(tools_for("gm")) == 8 and set(tools_for("role")) == {"edit_self", "leave"}
+    assert len(tools_for("gm")) == 9 and set(tools_for("role")) == {"edit_self", "leave"}
     assert "id" not in tools_for("gm")["create_character"].model_json_schema()["properties"]
     n, s, a, b = fixture()
     emit(s, "enter", "甲到场", a.id)
@@ -275,6 +275,24 @@ def test_schemas_are_small_and_context_jinja_cannot_access_hidden_fields():
     assert estimate(request)["input_tokens"] > 0
     writing = build_request(Settings(_env_file=None), n, "writing", {"events": []})
     assert writing.body.tools is None and writing.body.tool_choice is None
+
+
+@pytest.mark.parametrize(
+    ("writing_mode", "requirements", "expected_task"),
+    [
+        ("generate", "", "首次生成本幕正文"),
+        ("rewrite", "  \n", "根据 events 从头重写整幕"),
+        ("rewrite", "把独白改短", "优先落实本次修改要求"),
+    ],
+)
+def test_writing_prompt_selects_task_from_mode_and_requirements(writing_mode, requirements, expected_task):
+    n = StudioNovel()
+    data = {"writing_mode": writing_mode, "requirements": requirements}
+    request = build_request(Settings(_env_file=None), n, "writing", data)
+    prompt = request.body.messages[0].content
+    assert expected_task in prompt
+    assert "正文第一段直接写开场情境或开场动作" in prompt
+    assert ("旧稿只供参考" in prompt) == (writing_mode == "rewrite" and not requirements.strip())
 
 
 async def test_estimate_does_not_save_edits_and_invalid_jinja_is_readable(client):
@@ -374,10 +392,14 @@ async def test_api_gm_answers_user_question_without_tool_calls_and_keeps_it_afte
     scene_id = n["scenes"][-1]["entity"]["id"]
     before_calls = n["calls"]
     original = StudioRunner.mock
+    reply = "可以把冲突设为信任问题，先讨论动机，不必立即演绎。"
 
     def mock(self, mode, data, history):
         if mode == "gm":
-            return StudioAction(name="reply", text="可以把冲突设为信任问题，先讨论动机，不必立即演绎。")
+            return StudioAction(
+                name="reply",
+                text=json.dumps({"channel": "user_discussion", "speaker": "gm", "text": reply}),
+            )
         return original(self, mode, data, history)
 
     monkeypatch.setattr(StudioRunner, "mock", mock)
@@ -389,7 +411,7 @@ async def test_api_gm_answers_user_question_without_tool_calls_and_keeps_it_afte
     after = (await client.get(path)).json()
     messages = after["scenes"][-1]["messages"]
     assert [m["role"] for m in messages] == ["user", "assistant"]
-    assert messages[-1]["content"] == "可以把冲突设为信任问题，先讨论动机，不必立即演绎。"
+    assert messages[-1]["content"] == reply
     assert after["calls"] == before_calls + 1 and not after["busy"] and not after["error"]
     assert after["scenes"][-1]["events"] == []
     assert after["turn_checkpoint"]["version"] == after["version"]
@@ -397,7 +419,7 @@ async def test_api_gm_answers_user_question_without_tool_calls_and_keeps_it_afte
     assert again["scenes"][-1]["messages"] == messages
 
 
-async def test_api_progressive_creation_performance_prose_branch_and_purge(client):
+async def test_api_progressive_creation_performance_prose_branch_and_purge(client, monkeypatch):
     n = (await client.post("/api/studio/novels", json={})).json()
     key = n["id"]
 
@@ -442,8 +464,37 @@ async def test_api_progressive_creation_performance_prose_branch_and_purge(clien
     n = await get()
     assert any(e["kind"] == "role" for e in n["scenes"][0]["events"])
     n = await control("confirm_scene", scene_id=scene_id)
-    n = await control("write", scene_id=scene_id)
-    assert n["scenes"][0]["text"]
+    original_mock = StudioRunner.mock
+    writing_requests = []
+    replies = iter(["第一版整幕正文", " ", "第二版整幕正文"])
+
+    def mock(self, mode, data, history):
+        if mode != "writing":
+            return original_mock(self, mode, data, history)
+        assert not history
+        writing_requests.append(data)
+        return StudioAction(name="reply", text=next(replies))
+
+    monkeypatch.setattr(StudioRunner, "mock", mock)
+    n = await control("write", scene_id=scene_id, instruction="使用第一人称")
+    assert n["scenes"][0]["text"] == "第一版整幕正文"
+    assert n["scenes"][0]["writing_requirements"] == "使用第一人称"
+    n = await control("write", scene_id=scene_id, instruction="补充环境细节")
+    assert n["error"] == "模型没有返回正文"
+    assert n["scenes"][0]["text"] == "第一版整幕正文"
+    assert n["scenes"][0]["writing_requirements"] == "使用第一人称"
+    n = await control("write", scene_id=scene_id, instruction="缩短对话")
+    assert n["scenes"][0]["text"] == "第二版整幕正文"
+    assert n["scenes"][0]["writing_requirements"] == "缩短对话"
+    assert [
+        (data["writing_mode"], data["text"], data["previous_requirements"], data["requirements"])
+        for data in writing_requests
+    ] == [
+        ("generate", "", "", "使用第一人称"),
+        ("rewrite", "第一版整幕正文", "使用第一人称", "补充环境细节"),
+        ("rewrite", "第一版整幕正文", "使用第一人称", "缩短对话"),
+    ]
+    assert all(data["events"] == writing_requests[0]["events"] for data in writing_requests)
     n = await control("finish_chapter", scene_id=scene_id)
     assert n["chapters"][0]["summary"] and not n["chapters"][0]["summary_stale"]
     n = await control("new_scene", new_chapter=True)
@@ -455,6 +506,8 @@ async def test_api_progressive_creation_performance_prose_branch_and_purge(clien
     n = await control("branch", scene_id=scene_id)
     assert len(n["scenes"]) == 1 and len(n["branches"][0]["scenes"]) == 2
     assert not n["scenes"][0]["confirmed"] and n["scenes"][0]["text"] == ""
+    assert n["scenes"][0]["writing_requirements"] == ""
+    assert n["branches"][0]["scenes"][0]["writing_requirements"] == "缩短对话"
     stale = await client.post(f"/api/studio/novels/{key}/control", json={"version": 0, "action": "delete"})
     assert stale.status_code == 409
     n = await control("delete")
