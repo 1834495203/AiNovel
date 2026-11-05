@@ -13,7 +13,7 @@ import type {Entity,Novel} from '../studio-api';
 const w=reactive(useWorkspace()),mobile=useMobile(),dialog=useDialog();
 const tab=ref<'chat'|'stage'|'prose'|'fields'>('chat'),sidebar=ref(false),templates=ref(false),settings=ref(false),review=ref(false),trash=ref(false),search=ref('');
 const naming=ref(false),name=ref(''),fieldsRef=ref<InstanceType<typeof FieldsPanel>|null>(null),drawerFieldsRef=ref<InstanceType<typeof FieldsPanel>|null>(null),fieldsDrawer=ref(false);
-const savedError=ref(''),readerSize=ref(17),writingPanel=ref(false);
+const savedError=ref(''),readerSize=ref(17),writingChat=ref(false);
 const readerSizes=[{label:'小字',value:15},{label:'标准',value:17},{label:'大字',value:20}];
 const filteredBooks=computed(()=>w.books.filter(b=>b.deleted===trash.value&&b.title.toLowerCase().includes(search.value.toLowerCase())));
 const drafts=computed(()=>filteredBooks.value.filter(b=>!b.created)),published=computed(()=>filteredBooks.value.filter(b=>b.created));
@@ -22,6 +22,11 @@ const chapter=computed(()=>archiveChapters.value.find(c=>c.entity.id===w.scene?.
 const activeTabLabel=computed(()=>({chat:w.novel?.created?'与 GM 讨论':'与 AI 沟通',stage:'角色演绎',prose:'小说正文',fields:'小说资料'}[tab.value]));
 const currentError=computed(()=>w.error||(!w.novel?.busy&&w.novel?.error&&savedError.value!==`${w.novel.run_id}:${w.novel.error}`?w.novel.error:''));
 const canFinish=computed(()=>!!chapter.value&&!!w.novel?.scenes.filter(s=>s.chapter_id===chapter.value?.entity.id).length&&w.novel.scenes.filter(s=>s.chapter_id===chapter.value?.entity.id).every(s=>s.confirmed&&!!s.text));
+const writingMenu=computed(()=>[
+ {label:'回退整幕正文',key:'undo_prose',disabled:w.busy||!w.scene?.text||w.novel?.scenes.filter(s=>s.text).at(-1)?.entity.id!==w.scene?.entity.id},
+ {label:chapter.value?.completed&&!chapter.value.summary_stale?'本章已完成':'完成本章并生成摘要',
+  key:'finish_chapter',disabled:w.busy||!canFinish.value||!!chapter.value?.completed&&!chapter.value.summary_stale},
+]);
 const actions=computed(()=>{
  if(!w.novel)return [];
  if(w.novel.deleted)return [{label:'恢复作品',key:'restore'},{label:'永久删除',key:'purge'}];
@@ -32,11 +37,9 @@ function dismissError(){w.error='';savedError.value=`${w.novel?.run_id}:${w.nove
 async function openBook(id:string){await w.open(id);location.hash='studio/'+id;tab.value='chat';sidebar.value=false}
 async function create(){trash.value=false;await w.create();tab.value='chat';sidebar.value=false}
 async function control(kind:string,extra:Record<string,unknown>={}){if(['new_scene','branch'].includes(kind)){tab.value='chat';sidebar.value=false}return await w.control(kind,extra)}
-async function writingAction(kind:'write'|'undo_prose'|'finish_chapter'){
- const value=await w.control(kind,kind==='write'?{instruction:w.requirements}:{});
- if(!value)return;
- writingPanel.value=false;
- if(kind==='undo_prose')tab.value='chat';
+async function writingAction(kind:'undo_prose'|'finish_chapter'){
+ const value=await w.control(kind);
+ if(value&&kind==='undo_prose')tab.value='chat';
 }
 function reset(){dialog.warning({title:'重新演绎这一幕？',content:'本次群聊、进出场和临时角色变化会被废弃。世界观、人物设定等编辑会保留。',positiveText:'重置演绎',negativeText:'保留当前演绎',onPositiveClick:()=>control('reset')})}
 function remove(){dialog.warning({title:'移入回收站？',content:'正文、角色、演绎和分支都会保留，可以之后恢复。',positiveText:'移入回收站',negativeText:'取消',onPositiveClick:async()=>{await control('delete');w.home();trash.value=true}})}
@@ -53,7 +56,7 @@ function reviewFields(){review.value=false;showFields()}
 function keyHash(){const id=location.hash.match(/^#studio\/(.+)$/)?.[1];if(id&&id!==w.novel?.id)openBook(id);else if(!id&&w.novel)w.home()}
 // Loading a saved failure is not a new failure. Only later failures may raise a banner.
 watch(()=>w.novel?.id,()=>{savedError.value=`${w.novel?.run_id}:${w.novel?.error}`;tab.value='chat'});
-watch([tab,()=>w.scene?.entity.id,()=>w.archive],()=>{writingPanel.value=false});
+watch([tab,()=>w.scene?.entity.id,()=>w.archive],()=>{writingChat.value=false});
 onMounted(()=>{w.initialize();window.addEventListener('hashchange',keyHash)});
 onUnmounted(()=>window.removeEventListener('hashchange',keyHash));
 </script>
@@ -71,7 +74,7 @@ onUnmounted(()=>window.removeEventListener('hashchange',keyHash));
  <div v-if="w.novel.deleted" class="deleted-notice"><NAlert type="warning">这部作品在回收站中。<div class="modal-actions"><NButton @click="control('restore')">恢复作品</NButton><NButton text type="error" @click="purge">永久删除</NButton></div></NAlert></div>
  <div v-if="w.novel.created&&!w.scene&&tab!=='fields'" class="first-scene-empty"><div class="welcome-symbol"><Sparkles :size="28"/></div><h2>设定已就绪，开始第一幕</h2><p>每幕都有独立的讨论和角色演绎。先创建一幕，再和 GM 商量要发生什么。</p><NButton type="primary" size="large" :disabled="w.busy||w.novel.deleted" :loading="w.action==='new_scene'" @click="control('new_scene')">创建第一幕</NButton></div>
  <div v-else class="workspace-body" :class="{split:!mobile&&tab==='chat'&&w.novel.created}">
- <ChatPanel v-if="tab==='chat'" :key="w.novel.id+':'+(w.scene?.entity.id??'creation')+w.archive" :messages="w.messages" :can-change-turn="w.canChangeTurn" :legacy-turn="w.legacyTurn" :change-turn="w.changeTurn" :pending="w.optimistic" :draft="w.draft" @update:draft="w.draft=$event" :busy="w.novel.busy||w.action==='send'||w.action==='turn'" :editable="w.editable&&!w.action" :created="w.novel.created" :status="w.status" :tokens="w.preview?.input_tokens" :failed="w.failedSend" :poll-failed="w.pollFailed" :mobile="mobile" :calls="Math.max(0,w.novel.calls-w.roundStart)" @send="w.send()" @retry="w.send(w.failedSend)" @refresh="w.refresh().catch(()=>{w.pollFailed=true})" @settings="settings=true"/>
+ <ChatPanel v-if="tab==='chat'" :key="w.novel.id+':'+(w.scene?.entity.id??'creation')+w.archive" :messages="w.messages" :can-change-turn="w.canChangeTurn" :legacy-turn="w.legacyTurn" :change-turn="w.changeTurn" :pending="w.optimistic&&!w.optimistic.writing?w.optimistic:null" :draft="w.draft" @update:draft="w.draft=$event" :busy="w.novel.busy||w.action==='send'||w.action==='turn'" :editable="w.editable&&!w.action" :created="w.novel.created" :status="w.status" :tokens="w.preview?.input_tokens" :failed="w.failedSend" :poll-failed="w.pollFailed" :mobile="mobile" :calls="Math.max(0,w.novel.calls-w.roundStart)" @send="w.send()" @retry="w.send(w.failedSend)" @refresh="w.refresh().catch(()=>{w.pollFailed=true})" @settings="settings=true"/>
  <StagePanel v-if="w.scene&&(tab==='stage'||!mobile&&tab==='chat')" :scene="w.scene" :characters="w.novel.characters" :present="w.present" :offstage="w.offstage" :busy="w.busy" :editable="w.editable" :status="w.status" @enter="control('enter',{name:$event})" @leave="control('leave',{name:$event})" @create="newCharacter"/>
  <section v-if="tab==='prose'&&w.scene" class="prose-panel reader-panel" aria-label="小说正文">
   <div :key="w.archive+':'+w.scene.entity.id" class="prose-scroll reader-scroll" tabindex="0" aria-label="正文阅读区">
@@ -93,10 +96,11 @@ onUnmounted(()=>window.removeEventListener('hashchange',keyHash));
   </div>
   <footer class="reader-footer">
    <span v-if="w.novel.running==='writing'" class="reader-status" role="status">{{w.scene.text?'正在重写正文…':'正在生成正文…'}}</span>
+   <span v-else-if="w.novel.running==='writing_chat'" class="reader-status" role="status">写作助手正在处理…</span>
    <span v-else-if="w.novel.running==='summary'" class="reader-status" role="status">正在生成章节摘要…</span>
    <NSelect v-model:value="readerSize" size="small" :options="readerSizes" aria-label="正文字号"/>
-   <NButton v-if="!w.archive&&!w.novel.deleted" secondary size="small" :disabled="!w.scene.confirmed||w.busy" @click="writingPanel=true">
-    <template #icon><FileText :size="16"/></template>{{w.scene.text?'写作操作':'写正文'}}
+   <NButton v-if="w.writingEditable||w.scene.writing_messages?.length" type="primary" secondary size="small" @click="writingChat=true">
+    <template #icon><MessageCircle :size="16"/></template>写作对话
    </NButton>
   </footer>
  </section>
@@ -106,18 +110,22 @@ onUnmounted(()=>window.removeEventListener('hashchange',keyHash));
  <nav v-if="mobile" class="mobile-tabs" aria-label="工作区导航"><button :class="{active:tab==='chat'}" @click="tab='chat'" aria-label="对话"><MessageCircle :size="21"/><span>{{w.novel.created?'讨论':'对话'}}</span></button><button v-if="w.novel.created" :class="{active:tab==='stage'}" @click="tab='stage'" aria-label="演绎"><NBadge dot :show="w.novel.busy&&tab!=='stage'"><Users :size="21"/></NBadge><span>演绎</span></button><button v-if="w.novel.created" :class="{active:tab==='prose'}" @click="tab='prose'" aria-label="正文"><FileText :size="21"/><span>正文</span></button><button :class="{active:tab==='fields'}" @click="tab='fields'" aria-label="设定"><Layers :size="21"/><span>设定</span></button><button v-if="!w.novel.created" @click="templates=true" aria-label="模板"><LibraryBig :size="21"/><span>模板</span></button></nav>
  </section></div></template>
  <TemplateDrawer v-model:show="templates" :mobile="mobile" :novel="w.novel" :busy="w.busy" @apply="applyTemplate"/>
- <NDrawer v-if="tab==='prose'&&w.scene" v-model:show="writingPanel" placement="bottom" height="min(340px, calc(var(--app-height, 100dvh) - 12px))" :auto-focus="false" class="workspace-drawer">
-  <NDrawerContent title="写作操作" closable>
-   <div class="writing-sheet">
-    <NFormItem label="本次正文要求" :show-feedback="false">
-     <NInput v-model:value="w.requirements" type="textarea" :autosize="{minRows:2,maxRows:5}" :placeholder="w.scene.text?'可选，写下本次要调整的内容':'可选，写下篇幅、视角或文风要求'" :readonly="w.busy" :input-props="{'aria-label':'正文要求'}"/>
-    </NFormItem>
-    <div class="writing-sheet-actions">
-     <NButton type="primary" :disabled="w.busy||!w.scene.confirmed||!!w.archive" :loading="w.action==='write'" @click="writingAction('write')">{{w.scene.text?'重写正文':'生成正文'}}</NButton>
-     <NButton :disabled="w.busy||!w.scene.text||!!w.archive" @click="writingAction('undo_prose')">回退正文</NButton>
-     <NButton secondary :disabled="w.busy||!canFinish||!!w.archive||!!chapter?.completed&&!chapter.summary_stale" :loading="w.action==='finish_chapter'" @click="writingAction('finish_chapter')">{{chapter?.completed&&!chapter.summary_stale?'本章已完成':'完成本章并生成摘要'}}</NButton>
+ <NDrawer v-if="tab==='prose'&&w.scene" v-model:show="writingChat" :placement="mobile?'bottom':'right'" :width="mobile?undefined:510" :height="mobile?'calc(var(--app-height, 100dvh) - 12px)':undefined" class="workspace-drawer">
+  <NDrawerContent title="本幕写作对话" closable :body-content-style="{padding:0,display:'flex',flexDirection:'column',height:'100%'}">
+   <template #header>
+    <div class="writing-chat-heading">本幕写作对话
+     <NDropdown v-if="w.writingEditable" trigger="click" :options="writingMenu" @select="writingAction">
+      <NButton quaternary circle size="small" aria-label="正文与章节管理"><template #icon><MoreHorizontal :size="18"/></template></NButton>
+     </NDropdown>
     </div>
-   </div>
+   </template>
+   <NAlert v-if="currentError" type="error" closable class="writing-chat-error" @close="dismissError">{{currentError}}</NAlert>
+   <ChatPanel writing created :messages="w.writingMessages" :pending="w.optimistic?.writing?w.optimistic:null"
+    :can-change-turn="w.canChangeWritingTurn" :legacy-turn="w.legacyWritingTurn" :change-turn="w.changeWritingTurn"
+    :draft="w.writingDraft" @update:draft="w.writingDraft=$event" :editable="w.writingEditable&&!w.busy"
+    :busy="w.novel?.running==='writing_chat'||w.action==='sendWriting'||w.action==='writingTurn'" :status="w.status" :mobile="mobile"
+    :calls="Math.max(0,(w.novel?.calls??0)-w.roundStart)" :failed="w.failedWriting" :poll-failed="w.pollFailed"
+    @send="w.send(w.writingDraft,true)" @retry="w.send(w.failedWriting,true)" @refresh="w.refresh().catch(()=>{w.pollFailed=true})"/>
   </NDrawerContent>
  </NDrawer>
  <SettingsDrawer v-if="w.novel" v-model:show="settings" :mobile="mobile" :novel="w.novel" :scene-id="w.scene?.entity.id??''" :archive-id="w.archive" :draft="w.draft" :busy="w.busy" :defaults="w.contracts?.prompts??{}" :tools="w.contracts?.tools??{}" @save="saveSettings"/>
@@ -138,12 +146,10 @@ onUnmounted(()=>window.removeEventListener('hashchange',keyHash));
 .reader-footer{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;padding:7px clamp(16px,4vw,34px);border-top:1px solid #e8e1d4;background:#fdfbf7}
 .reader-footer .n-select{width:5rem}
 .reader-status{margin-right:auto;color:#746a5d;font-size:12px}
-.writing-sheet{max-width:42rem;margin-inline:auto}
-.writing-sheet-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
-.writing-sheet :deep(textarea){font-size:16px}
+.writing-chat-heading{display:flex;align-items:center;gap:8px}
+.writing-chat-error{margin:10px 16px 0;flex-shrink:0}
 @media(max-width:520px){
  .reader-scroll{padding-inline:20px}
  .reader-footer .n-button{min-height:36px}
- .writing-sheet-actions .n-button{min-height:40px}
 }
 </style>

@@ -37,12 +37,12 @@ test('mobile creation, fields, role performance, prose and historical branch',{s
   await page.screenshot({path:'.tmp/mobile-new-stage.png'});
   await page.getByRole('button',{name:'确认这一幕',exact:true}).click();
   await page.getByRole('button',{name:'正文',exact:true}).click();
-  assert.equal(await page.getByRole('textbox',{name:'正文要求'}).count(),0);
-  await page.getByRole('button',{name:'写正文',exact:true}).click();
-  await page.getByRole('button',{name:'生成正文',exact:true}).click();
-  await page.locator('.prose-scroll article').waitFor();
-  await page.getByRole('button',{name:'写作操作',exact:true}).click();
-  await page.getByRole('button',{name:'重写正文',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'写作操作',exact:true}).count(),0);
+  await page.getByRole('button',{name:'写作对话',exact:true}).click();
+  await page.getByRole('textbox',{name:'写作消息'}).fill('讨论一下正文的视角。');
+  await page.getByRole('button',{name:'发送消息',exact:true}).click();
+  await page.getByRole('button',{name:'重试本轮',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'撤回本轮',exact:true}).isEnabled(),true);
   await closeDrawer(page);
   await page.getByRole('button',{name:'目录与分支',exact:true}).click();
   await page.getByRole('button',{name:'创建下一幕',exact:true}).click();

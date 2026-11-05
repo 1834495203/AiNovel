@@ -6,6 +6,7 @@ from pydantic import Field, JsonValue, model_validator
 
 from ainovel.core.base import Model
 from ainovel.core.entities import Attribute, Description, EntityInput, Visibility
+from ainovel.core.prose_edits import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, ProseEdit
 from ainovel.core.studio import Patch, StudioAction
 from ainovel.llm.errors import StructuredOutputError
 
@@ -135,6 +136,42 @@ class CreationCharacter(EntityInput):
     )
 
 
+class ReadProse(Model):
+    """按段读取本幕正文，或搜索关键词并返回附近原文。段落编号从 1 开始，结果附带正文版本。"""
+
+    start: int = Field(default=1, ge=1, description="起始段号；搜索时是命中段落的起始序号。")
+    count: int | Literal["all"] | None = Field(
+        default=None,
+        description=f"希望读取的段数，留空或 null 时读 {DEFAULT_PAGE_SIZE} 段。"
+        f"每页最多 {MAX_PAGE_SIZE} 段，all 表示尽量读满一页。继续读取时使用返回的 next_start。",
+    )
+    query: str = Field(default="", max_length=500, description="可选。按原文查找关键词，留空时读取完整段落。")
+
+
+class ReadWritingScene(Model):
+    """读取本幕已确认的演绎、角色状态和上一版写作要求。初次生成或整幕重写时先调用。"""
+
+
+class EditProse(Model):
+    """按精确原文批量提交局部编辑，逐条定位后一起应用。其他文字和换行原样保留。"""
+
+    revision: str = Field(description="当前正文版本，从 read_prose 或上下文原样复制。")
+    edits: list[ProseEdit] = Field(min_length=1, max_length=30, description="各条都基于同一版本的原文。")
+
+
+class WriteProse(Model):
+    """首次写作或整幕重写时提交完整正文。局部修改使用 edit_prose。"""
+
+    revision: str = Field(description="当前正文版本，从上下文或 read_prose 原样复制。")
+    text: str = Field(min_length=1, description="整幕小说正文，保留自然段。")
+
+
+class WritingEdit(Edit):
+    """对「创作」资料执行 JSON Patch，支持增删改和 test。正文编辑使用专门的工具。"""
+
+    scope: Literal["creation"] = Field(default="creation", description="只允许操作创作资料。")
+
+
 TOOLS = {
     "say_to_user": SayToUser,
     "say_to_group": SayToGroup,
@@ -151,6 +188,14 @@ TOOLS = {
 
 
 def tools_for(mode):
+    if mode == "writing_chat":
+        return {
+            "read_prose": ReadProse,
+            "read_scene": ReadWritingScene,
+            "edit_prose": EditProse,
+            "write_prose": WriteProse,
+            "edit_fields": WritingEdit,
+        }
     if mode == "creation":
         return {
             "say_to_user": CreationSay,

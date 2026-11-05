@@ -20,8 +20,17 @@ from ainovel.core.studio import (
     StudioNovel,
     StudioScene,
     ToolOutcome,
+    TurnChannel,
+    WritingMessage,
 )
-from ainovel.core.studio_state import fork, present, require_editable, reset, role_states
+from ainovel.core.studio_state import (
+    fork,
+    present,
+    require_editable,
+    require_writable_prose,
+    reset,
+    role_states,
+)
 from ainovel.core.studio_templates import (
     StudioFieldTemplate,
     TemplateFields,
@@ -65,6 +74,7 @@ class TurnRequest(VersionRequest):
     scene_id: str = ""
     message_id: str
     message: str = ""
+    channel: TurnChannel = "discussion"
     preserve_state: bool = Field(
         default=False, description="仅用于无检查点旧消息：明确同意保留当前资料和演绎，只替换或撤回聊天记录。"
     )
@@ -157,7 +167,7 @@ def router(store, settings):
     async def launch(novel, tasks, mode, scene=None, instruction=""):
         novel.busy, novel.run_id, novel.error = True, str(uuid4()), ""
         novel.running = mode
-        if mode in ("creation", "gm") and novel.turn_checkpoint:
+        if mode in ("creation", "gm", "writing_chat") and novel.turn_checkpoint:
             novel.turn_checkpoint.version = novel.version + 1
         await repository.save(novel)
         tasks.add_task(StudioRunner(novel, repository, settings).run, mode, scene, instruction)
@@ -286,6 +296,29 @@ def router(store, settings):
         return novel
 
     @api.post(
+        "/novels/{key}/writing-message",
+        response_model=StudioNovel,
+        response_model_exclude=PUBLIC_NOVEL_EXCLUDE,
+    )
+    async def writing_message(key: str, request: SendRequest, tasks: BackgroundTasks):
+        novel = await writable(key, request.version)
+        if novel.deleted:
+            raise ValueError("小说在回收站中")
+        scene = find_scene(novel, request.scene_id)
+        if not novel.created or not scene.confirmed:
+            raise ValueError("请先确认演绎")
+        if not request.message.strip():
+            raise ValueError("消息不能为空")
+        await launch_writing_turn(novel, scene, request.message, tasks)
+        return novel
+
+    async def launch_writing_turn(novel, scene, content, tasks):
+        message = WritingMessage(role="user", content=content, checkpointed=True)
+        checkpoint(novel, scene, message.id, channel="writing")
+        scene.writing_messages.append(message)
+        await launch(novel, tasks, "writing_chat", scene)
+
+    @api.post(
         "/novels/{key}/turn",
         response_model=StudioNovel,
         response_model_exclude=PUBLIC_NOVEL_EXCLUDE,
@@ -295,15 +328,20 @@ def router(store, settings):
         if request.action == "edit" and not request.message.strip():
             raise ValueError("修改后的消息不能为空")
         content = restore_turn(
-            novel, request.scene_id, request.message_id, preserve_state=request.preserve_state
+            novel,
+            request.scene_id,
+            request.message_id,
+            preserve_state=request.preserve_state,
+            channel=request.channel,
         )
+        replacement = request.message if request.action == "edit" else content
         if request.action == "withdraw":
             await repository.save(novel)
+        elif request.channel == "writing":
+            await launch_writing_turn(novel, find_scene(novel, request.scene_id), replacement, tasks)
         else:
             scene = find_scene(novel, request.scene_id) if novel.created else None
-            user_message = ConversationMessage(
-                role="user", content=request.message if request.action == "edit" else content
-            )
+            user_message = ConversationMessage(role="user", content=replacement)
             checkpoint(novel, scene, user_message.id)
             (scene.messages if scene else novel.creation_messages).append(user_message)
             await launch(novel, tasks, "gm" if scene else "creation", scene)
@@ -393,11 +431,7 @@ def router(store, settings):
                     scene.character_snapshot = role_states(novel, scene)
                 chapter.summary_stale = True
             elif action == "write":
-                if not scene.confirmed:
-                    raise ValueError("请先确认演绎")
-                index = novel.scenes.index(scene)
-                if not scene.text and any(not s.text for s in novel.scenes[:index]):
-                    raise ValueError("请按幕顺序生成正文")
+                require_writable_prose(novel, scene)
                 await launch(novel, tasks, "writing", scene, request.instruction)
                 return novel
             elif action == "undo_prose":

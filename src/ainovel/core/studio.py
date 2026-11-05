@@ -9,8 +9,11 @@ from pydantic import Field, JsonValue, field_validator, model_validator
 
 from ainovel.core.base import Model
 from ainovel.core.entities import Entity
+from ainovel.core.prose_edits import ProseChange
 from ainovel.core.studio_templates import TemplateFields
 from ainovel.utils.time import now
+
+TurnChannel = Literal["discussion", "writing"]
 
 
 def identity() -> str:
@@ -66,6 +69,11 @@ class ConversationMessage(Model):
         return value
 
 
+class WritingMessage(ConversationMessage):
+    changes: list[ProseChange] = Field(default_factory=list)
+    checkpointed: bool = False
+
+
 class StudioChapter(Model):
     entity: Entity
     summary: str = ""
@@ -78,7 +86,7 @@ class PerformanceOperation(Model):
     parent: str = Field(default="", description="本操作接在哪个操作之后；空字符串表示起始状态。")
     kind: str = Field(description="操作类型。")
     summary: str = Field(description="便于定位的简短操作说明。")
-    origin: Literal["gm", "role", "user"] = Field(description="操作来源。")
+    origin: Literal["gm", "role", "user", "writer"] = Field(description="操作来源。")
     actor_id: str = Field(default="", description="角色操作所属的角色标识。")
     event_ids: list[str] = Field(default_factory=list, description="本次操作产生的群聊事件标识。")
     changes: list[Patch] = Field(description="程序记录的正向 JSON Patch，不包含逆操作。")
@@ -97,6 +105,7 @@ class StudioScene(Model):
     chapter_id: str
     confirmed: bool = False
     messages: list[ConversationMessage] = Field(default_factory=list)
+    writing_messages: list[WritingMessage] = Field(default_factory=list)
     events: list[StageEvent] = Field(default_factory=list)
     abandoned: list[list[StageEvent]] = Field(default_factory=list)
     settings_patches: dict[str, list[Patch]] = Field(default_factory=dict)
@@ -140,6 +149,7 @@ class TurnCheckpoint(Model):
     message_id: str
     version: int = 0
     before: dict[str, JsonValue]
+    channel: TurnChannel = "discussion"
 
 
 class StudioNovel(Model):

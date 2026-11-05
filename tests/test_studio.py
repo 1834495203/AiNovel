@@ -277,6 +277,16 @@ def test_schemas_are_small_and_context_jinja_cannot_access_hidden_fields():
     assert writing.body.tools is None and writing.body.tool_choice is None
 
 
+def test_studio_context_keeps_chinese_in_the_message_content():
+    data = {"scene": "第 1 幕", "text": "清妍说：“你好。”\n\n她笑了。"}
+    request = build_request(Settings(_env_file=None), StudioNovel(), "gm", data)
+    content = request.body.messages[-1].content
+    assert "第 1 幕" in content and "清妍" in content
+    assert "\\u7b2c" not in content
+    assert json.loads(content) == data
+    assert json.loads(request.body.model_dump_json())["messages"][-1]["content"] == content
+
+
 @pytest.mark.parametrize(
     ("writing_mode", "requirements", "expected_task"),
     [

@@ -11,13 +11,28 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from ainovel.core.entities import Entity
 from ainovel.core.performance_timeline import record_change, rewind, timeline_context
-from ainovel.core.studio import ConversationMessage, StudioAction, StudioStep, ToolOutcome, gm_discussion_text
+from ainovel.core.prose_edits import (
+    apply_prose_edits,
+    paragraph_ranges,
+    prose_revision,
+    read_prose,
+    require_revision,
+)
+from ainovel.core.studio import (
+    ConversationMessage,
+    StudioAction,
+    StudioStep,
+    ToolOutcome,
+    WritingMessage,
+    gm_discussion_text,
+)
 from ainovel.core.studio_state import (
     apply_patch,
     edit_self,
     emit,
     present,
     require_editable,
+    require_writable_prose,
     reset,
     role_context,
     role_states,
@@ -37,9 +52,10 @@ from ainovel.llm.schemas import (
 )
 from ainovel.llm.transport import OpenAICompatibleTransport
 
-MODES = ("creation", "gm", "role", "writing", "summary")
+MODES = ("creation", "gm", "role", "writing", "writing_chat", "summary")
 ENV = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
 ENV.globals.clear()
+ENV.policies["json.dumps_kwargs"] = {**ENV.policies["json.dumps_kwargs"], "ensure_ascii": False}
 
 
 def defaults():
@@ -118,6 +134,26 @@ def gm_context(novel, scene):
 
 def conversation_history(messages):
     return [Message(role=m.role, content=m.content) for m in messages]
+
+
+def writing_scene_context(novel, scene):
+    data = scene_data(scene)
+    participants = {e.actor_id for e in scene.events if e.kind == "enter"}
+    data["characters"] = [
+        c.model_dump(mode="json") for key, c in role_states(novel, scene).items() if key in participants
+    ]
+    data["previous_requirements"] = scene.writing_requirements
+    return data
+
+
+def writing_chat_context(novel, scene):
+    return {
+        "scene": scene.entity.name,
+        "revision": prose_revision(scene.text),
+        "paragraph_count": len(paragraph_ranges(scene.text)),
+        "has_prose": bool(scene.text),
+        "creation": [entity.model_dump(mode="json") for entity in novel.creation],
+    }
 
 
 def build_request(settings, novel, mode, data, history=None):
@@ -259,18 +295,26 @@ class StudioRunner:
             }
         return result
 
-    def send_user_message(self, scene, text):
+    def send_user_message(self, scene, text, *, writing=False):
         """Store each actual user-facing message without content-based suppression."""
-        if scene is not None:
+        if scene is not None and not writing:
             text = gm_discussion_text(text)
         if not text.strip():
             return False
-        message = ConversationMessage(role="assistant", content=text)
-        (scene.messages if scene else self.novel.creation_messages).append(message)
+        if writing:
+            scene.writing_messages.append(WritingMessage(role="assistant", content=text))
+        else:
+            message = ConversationMessage(role="assistant", content=text)
+            (scene.messages if scene else self.novel.creation_messages).append(message)
         return True
 
     async def save_progress(self):
-        if self.novel.turn_checkpoint and self.novel.running.split(" · ")[0] in ("creation", "gm", "role"):
+        if self.novel.turn_checkpoint and self.novel.running.split(" · ")[0] in (
+            "creation",
+            "gm",
+            "role",
+            "writing_chat",
+        ):
             self.novel.turn_checkpoint.version = self.novel.version + 1
         await self.repository.save(self.novel)
 
@@ -299,6 +343,8 @@ class StudioRunner:
 
     def mock(self, mode, data, history):
         calls = [t.tool_calls[0].function.name for t in history if t.tool_calls]
+        if mode == "writing_chat":
+            return StudioAction(name="reply", text="当前使用离线模拟模型。")
         if mode == "creation" and "edit_fields" not in calls:
             user = next((m.content for m in reversed(history) if m.role == "user"), "故事构思")
             return StudioAction(
@@ -458,6 +504,8 @@ class StudioRunner:
             raise ValueError("当前模式没有该工具权限")
         args = tools_for(mode)[action.name].model_validate(action.arguments)
         novel = self.novel
+        if mode == "writing_chat":
+            return self.execute_writing(scene, action.name, args)
         if action.name == "rewind_performance":
             data = rewind(self.novel, scene, steps=args.steps, target=args.target)
             return ToolOutcome(
@@ -494,6 +542,55 @@ class StudioRunner:
                 lambda n, s: self.execute_atomic(mode, n, s, action, args),
             )
         return self.execute_atomic(mode, self.novel, scene, action, args)
+
+    def execute_writing(self, scene, name, args):
+        novel = self.novel
+        if novel.deleted or not novel.created or not scene.confirmed:
+            raise ValueError("只能操作已确认的演绎")
+        if name == "read_prose":
+            return ToolOutcome(data=read_prose(scene.text, args.start, args.count, args.query))
+        if name == "read_scene":
+            data = writing_scene_context(novel, scene)
+            data.pop("text")  # Prose is read separately, in the requested range.
+            return ToolOutcome(data=data)
+        if name == "edit_fields":
+            active = novel.scenes[-1]
+            if active.confirmed:
+                result = edit_fields(novel, None, args)
+            else:
+                result = self.change(
+                    active,
+                    "writing_edit_fields",
+                    "写作助手修改创作资料",
+                    lambda n, s: edit_fields(n, None, args),
+                    origin="writer",
+                )
+            return ToolOutcome(message="创作资料已更新", data=result)
+
+        require_writable_prose(novel, scene)
+        if name == "edit_prose":
+            if not scene.text:
+                raise ValueError("本幕还没有正文，请先提交完整正文")
+            text, changes = apply_prose_edits(scene.text, args.revision, args.edits)
+            count = sum(change.count for change in changes)
+            message = f"正文已修改 {count} 处"
+        else:
+            require_revision(scene.text, args.revision)
+            text, changes = args.text, []
+            message = "已保存整幕正文"
+        if text == scene.text:
+            return ToolOutcome(message="正文没有变化", data={"revision": prose_revision(scene.text)})
+        if not text.strip():
+            raise ValueError("正文不能为空")
+        instruction = next(m.content for m in reversed(scene.writing_messages) if m.role == "user")
+        self.save_prose(scene, text, instruction)
+        scene.writing_messages.append(WritingMessage(role="assistant", content=message, changes=changes))
+        return ToolOutcome(message=message, data={"revision": prose_revision(scene.text)})
+
+    def save_prose(self, scene, text, instruction):
+        scene.text = text
+        scene.writing_requirements = instruction
+        next(c for c in self.novel.chapters if c.entity.id == scene.chapter_id).summary_stale = True
 
     def execute_atomic(self, mode, novel, scene, action, args):
         if action.name == "say_to_user":
@@ -549,25 +646,17 @@ class StudioRunner:
 
     async def run(self, mode, scene=None, instruction=""):
         novel = self.novel
+        writing_chat = mode == "writing_chat"
         try:
             if mode in ("writing", "summary"):
                 if mode == "writing":
-                    data = scene_data(scene)
+                    data = writing_scene_context(novel, scene)
                     data["writing_mode"] = "rewrite" if scene.text else "generate"
-                    data["previous_requirements"] = scene.writing_requirements
-                    participants = {e.actor_id for e in scene.events if e.kind == "enter"}
-                    data["characters"] = [
-                        c.model_dump(mode="json")
-                        for key, c in role_states(novel, scene).items()
-                        if key in participants
-                    ]
                     data["requirements"] = instruction
                     action = await self.call(mode, data, [])
                     if not action.text.strip():
                         raise ValueError("模型没有返回正文")
-                    scene.text = action.text
-                    scene.writing_requirements = instruction
-                    next(c for c in novel.chapters if c.entity.id == scene.chapter_id).summary_stale = True
+                    self.save_prose(scene, action.text, instruction)
                 else:
                     chapter = next(c for c in novel.chapters if c.entity.id == instruction)
                     scenes = [s for s in novel.scenes if s.chapter_id == chapter.entity.id]
@@ -578,11 +667,19 @@ class StudioRunner:
                     action = await self.call(mode, data, [])
                     chapter.summary, chapter.summary_stale = action.text, False
             else:
-                messages = scene.messages if scene else novel.creation_messages
+                messages = (
+                    scene.writing_messages
+                    if writing_chat
+                    else scene.messages
+                    if scene
+                    else novel.creation_messages
+                )
                 history = conversation_history(messages)
                 while True:
                     data = (
-                        gm_context(novel, scene)
+                        writing_chat_context(novel, scene)
+                        if writing_chat
+                        else gm_context(novel, scene)
                         if scene
                         else {
                             "title": novel.title,
@@ -594,10 +691,10 @@ class StudioRunner:
                     action = await self.call(mode, data, history)
                     if isinstance(action, StudioAction) and action.name == "reply":
                         # Native assistant text replies to the user; no tools means completion.
-                        self.send_user_message(scene, action.text)
+                        self.send_user_message(scene, action.text, writing=writing_chat)
                         break
                     actions, text = self.begin_step(history, action)
-                    self.send_user_message(scene, text)
+                    self.send_user_message(scene, text, writing=writing_chat)
                     restarted = False
                     rewind_result = None
                     for item in actions:
@@ -625,14 +722,14 @@ class StudioRunner:
                         else:
                             history = []  # Discarded attempt results must not contaminate the new rehearsal.
         except BudgetReached:
-            self.send_user_message(scene, "本轮达到调用预算，已暂停并保留进度。")
+            self.send_user_message(scene, "本轮达到调用预算，已暂停并保留进度。", writing=writing_chat)
         except Exception as error:
             novel.error = str(error)
         finally:
             novel.busy = False
             novel.running = ""
             # Persist the idle status and keep the checkpoint at this final version.
-            if novel.turn_checkpoint and mode in ("creation", "gm"):
+            if novel.turn_checkpoint and mode in ("creation", "gm", "writing_chat"):
                 novel.turn_checkpoint.version = novel.version + 1
             await self.repository.save(novel)
             if self.gateway:

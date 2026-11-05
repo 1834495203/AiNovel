@@ -426,6 +426,58 @@
         }
       }
     },
+    "/api/studio/novels/{key}/writing-message": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Writing Message",
+        "operationId": "writing_message_api_studio_novels__key__writing_message_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/studio/novels/{key}/turn": {
       "post": {
         "tags": [
@@ -6820,7 +6872,8 @@
             "enum": [
               "gm",
               "role",
-              "user"
+              "user",
+              "writer"
             ],
             "title": "Origin",
             "description": "操作来源。"
@@ -7968,6 +8021,41 @@
           "version"
         ],
         "title": "PromptTemplateVersion"
+      },
+      "ProseChange": {
+        "properties": {
+          "paragraph": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paragraph"
+          },
+          "before": {
+            "type": "string",
+            "title": "Before"
+          },
+          "after": {
+            "type": "string",
+            "title": "After"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "before",
+          "after",
+          "count"
+        ],
+        "title": "ProseChange"
       },
       "PurgeResult": {
         "properties": {
@@ -10157,6 +10245,13 @@
             "type": "array",
             "title": "Messages"
           },
+          "writing_messages": {
+            "items": {
+              "$ref": "#/components/schemas/WritingMessage"
+            },
+            "type": "array",
+            "title": "Writing Messages"
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/StageEvent"
@@ -10438,6 +10533,15 @@
             },
             "type": "object",
             "title": "Before"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "discussion",
+              "writing"
+            ],
+            "title": "Channel",
+            "default": "discussion"
           }
         },
         "additionalProperties": false,
@@ -10476,6 +10580,15 @@
             "type": "string",
             "title": "Message",
             "default": ""
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "discussion",
+              "writing"
+            ],
+            "title": "Channel",
+            "default": "discussion"
           },
           "preserve_state": {
             "type": "boolean",
@@ -11314,6 +11427,50 @@
           "content"
         ],
         "title": "WritingDraft"
+      },
+      "WritingMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/ProseChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "checkpointed": {
+            "type": "boolean",
+            "title": "Checkpointed",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "WritingMessage"
       }
     }
   }

@@ -143,6 +143,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/studio/novels/{key}/writing-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Writing Message */
+        post: operations["writing_message_api_studio_novels__key__writing_message_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/studio/novels/{key}/turn": {
         parameters: {
             query?: never;
@@ -2769,7 +2786,7 @@ export interface components {
              * @description 操作来源。
              * @enum {string}
              */
-            origin: "gm" | "role" | "user";
+            origin: "gm" | "role" | "user" | "writer";
             /**
              * Actor Id
              * @description 角色操作所属的角色标识。
@@ -3387,6 +3404,17 @@ export interface components {
              * Format: date-time
              */
             created_at?: string;
+        };
+        /** ProseChange */
+        ProseChange: {
+            /** Paragraph */
+            paragraph?: number | null;
+            /** Before */
+            before: string;
+            /** After */
+            after: string;
+            /** Count */
+            count: number;
         };
         /** PurgeResult */
         PurgeResult: {
@@ -4432,6 +4460,8 @@ export interface components {
             confirmed: boolean;
             /** Messages */
             messages?: components["schemas"]["ConversationMessage"][];
+            /** Writing Messages */
+            writing_messages?: components["schemas"]["WritingMessage"][];
             /** Events */
             events?: components["schemas"]["StageEvent"][];
             /** Abandoned */
@@ -4585,6 +4615,12 @@ export interface components {
             before: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+            /**
+             * Channel
+             * @default discussion
+             * @enum {string}
+             */
+            channel: "discussion" | "writing";
         };
         /** TurnRequest */
         TurnRequest: {
@@ -4607,6 +4643,12 @@ export interface components {
              * @default
              */
             message: string;
+            /**
+             * Channel
+             * @default discussion
+             * @enum {string}
+             */
+            channel: "discussion" | "writing";
             /**
              * Preserve State
              * @description 仅用于无检查点旧消息：明确同意保留当前资料和演绎，只替换或撤回聊天记录。
@@ -4957,6 +4999,30 @@ export interface components {
              */
             status: "pending" | "confirmed" | "discarded";
         };
+        /** WritingMessage */
+        WritingMessage: {
+            /** Id */
+            id?: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Changes */
+            changes?: components["schemas"]["ProseChange"][];
+            /**
+             * Checkpointed
+             * @default false
+             */
+            checkpointed: boolean;
+        };
     };
     responses: never;
     parameters: never;
@@ -5247,6 +5313,41 @@ export interface operations {
         };
     };
     message_api_studio_novels__key__message_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    writing_message_api_studio_novels__key__writing_message_post: {
         parameters: {
             query?: never;
             header?: never;

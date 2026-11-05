@@ -206,6 +206,13 @@ def require_editable(novel: StudioNovel, scene: StudioScene):
         raise ValueError("该幕已冻结，请从此幕创建分支")
 
 
+def require_writable_prose(novel: StudioNovel, scene: StudioScene):
+    if not novel.created or not scene.confirmed:
+        raise ValueError("请先确认演绎")
+    if not scene.text and any(not s.text for s in novel.scenes[: novel.scenes.index(scene)]):
+        raise ValueError("请按幕顺序生成正文")
+
+
 def fork(novel: StudioNovel, scene_id: str):
     index = next((i for i, s in enumerate(novel.scenes) if s.entity.id == scene_id), None)
     if index is None:
@@ -222,6 +229,7 @@ def fork(novel: StudioNovel, scene_id: str):
     scene.confirmed = False
     scene.text = ""
     scene.writing_requirements = ""
+    scene.writing_messages = []
     reset(scene)
     scene.timeline = None
     kept = {s.chapter_id for s in novel.scenes}
