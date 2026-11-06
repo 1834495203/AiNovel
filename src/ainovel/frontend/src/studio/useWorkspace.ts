@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useMessage } from 'naive-ui';
 import { localId } from './localId';
-import { studio, type Card, type Entity, type Message, type Novel, type Preview, type Scene } from '../studio-api';
+import { studio, type Card, type Entity, type GmContextSchema, type Message, type Novel, type Preview, type Scene } from '../studio-api';
 
 type TurnAction='retry'|'edit'|'withdraw';
 
@@ -13,7 +13,7 @@ export function useWorkspace() {
   const loading = ref(false), action = ref(''), error = ref(''), failedSend = ref('');
   const optimistic = ref<{id:string;content:string;before:number;writing:boolean}|null>(null);
   const roundStart = ref(0), pollFailed = ref(false);
-  const contracts = ref<{prompts:Record<string,string>;tools:Record<string,unknown[]>}>();
+  const contracts = ref<{prompts:Record<string,string>;tools:Record<string,unknown[]>;gm_context_source:string;gm_context_schema:GmContextSchema}>();
   const scenes = computed(()=>archive.value ? novel.value?.branches.find(b=>b.id===archive.value)?.scenes??[] : novel.value?.scenes??[]);
   const scene = computed(()=>scenes.value.find(s=>s.entity.id===selected.value)??scenes.value.at(-1));
   const messages = computed(()=>novel.value?.created ? scene.value?.messages??[] : novel.value?.creation_messages??[]);
@@ -158,7 +158,7 @@ export function useWorkspace() {
   async function tick(){if(disposed)return;try{if(novel.value?.busy&&!action.value&&!polling){polling=true;await refresh()}}catch{pollFailed.value=true}finally{polling=false;if(!disposed)timer=window.setTimeout(tick,700)}}
   async function initialize(){loading.value=true;try{const [catalog]=await Promise.all([studio<typeof contracts.value>('/contracts'),list()]);contracts.value=catalog;const id=location.hash.match(/^#studio\/(.+)$/)?.[1];if(id)await open(id)}catch(e){error.value=String(e)}finally{loading.value=false}tick()}
   onBeforeUnmount(()=>{disposed=true;clearTimeout(timer);clearTimeout(estimateTimer)});
-  return {books,novel,preview,selected,archive,draft,writingDraft,writingEditable,failedWriting,loading,action,error,failedSend,optimistic,roundStart,pollFailed,contracts,
+  return {books,novel,preview,selected,archive,draft,writingDraft,writingEditable,failedWriting,loading,action,error,failedSend,optimistic,roundStart,pollFailed,contracts,setNovel,
     scenes,scene,messages,writingMessages,busy,editable,canConfirm,lastUser,legacyTurn,canChangeTurn,changeTurn,legacyWritingTurn,canChangeWritingTurn,changeWritingTurn,present,offstage,status,list,inspect,refresh,run,open,create,home,chooseScene,chooseArchive,control,send,edit,applyTemplate,saveSettings,purge,initialize};
 }
 

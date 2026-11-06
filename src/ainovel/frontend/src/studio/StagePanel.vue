@@ -12,7 +12,7 @@ function author(event:StageEvent){
   return event.kind==='gm'?'GM':actor(event.actor_id);
 }
 const eventLabels:Record<string,string>={
-  gm:'场景 / 客观结果',gm_direction:'私下提示 · 仅该角色收到',role:'发言 / 行动意图',self_edit:'修改自身字段',
+  gm:'场景 / 客观结果',gm_direction:'调度提示词',role:'发言 / 行动意图',self_edit:'修改自身字段',
 };
 watch(()=>props.scene.events.length,async()=>{if(follow.value){await nextTick();if(scroll.value)scroll.value.scrollTop=scroll.value.scrollHeight}});
 onMounted(()=>nextTick(()=>{if(scroll.value)scroll.value.scrollTop=scroll.value.scrollHeight}));

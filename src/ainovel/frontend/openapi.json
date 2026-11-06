@@ -686,6 +686,160 @@
         }
       }
     },
+    "/api/studio/novels/{key}/gm-templates": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Save Gm Template",
+        "operationId": "save_gm_template_api_studio_novels__key__gm_templates_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmTemplateSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/gm-template-selection": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Select Gm Template",
+        "operationId": "select_gm_template_api_studio_novels__key__gm_template_selection_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmTemplateSelection"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/gm-template-preview": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Preview Gm Template",
+        "operationId": "preview_gm_template_api_studio_novels__key__gm_template_preview_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmTemplatePreview"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/studio/novels/{key}/preview": {
       "get": {
         "tags": [
@@ -5277,6 +5431,17 @@
           "context_source": {
             "type": "string",
             "title": "Context Source"
+          },
+          "gm_context_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gm Context Source"
           }
         },
         "additionalProperties": false,
@@ -6337,6 +6502,122 @@
           "instruction"
         ],
         "title": "GenerateRequest"
+      },
+      "GmTemplate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "source"
+        ],
+        "title": "GmTemplate"
+      },
+      "GmTemplatePreview": {
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "scene_id": {
+            "type": "string",
+            "title": "Scene Id",
+            "default": ""
+          },
+          "branch_id": {
+            "type": "string",
+            "title": "Branch Id",
+            "default": ""
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "GmTemplatePreview"
+      },
+      "GmTemplateSave": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": ""
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "name",
+          "source"
+        ],
+        "title": "GmTemplateSave"
+      },
+      "GmTemplateSelection": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "id"
+        ],
+        "title": "GmTemplateSelection"
       },
       "HTTPValidationError": {
         "properties": {
@@ -9316,6 +9597,17 @@
           "context_source": {
             "type": "string",
             "title": "Context Source"
+          },
+          "gm_context_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gm Context Source"
           }
         },
         "additionalProperties": false,
@@ -10173,6 +10465,35 @@
             "type": "string",
             "title": "Context Source",
             "default": "{{ data | tojson }}"
+          },
+          "gm_context_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gm Context Source"
+          },
+          "gm_templates": {
+            "items": {
+              "$ref": "#/components/schemas/GmTemplate"
+            },
+            "type": "array",
+            "title": "Gm Templates"
+          },
+          "active_gm_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Gm Template Id"
           },
           "busy": {
             "type": "boolean",

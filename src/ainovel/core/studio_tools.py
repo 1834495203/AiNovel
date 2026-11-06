@@ -7,7 +7,7 @@ from pydantic import Field, JsonValue, model_validator
 from ainovel.core.base import Model
 from ainovel.core.entities import Attribute, Description, EntityInput, Visibility
 from ainovel.core.prose_edits import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, ProseEdit
-from ainovel.core.studio import Patch, StudioAction
+from ainovel.core.studio import NamedFieldEdit, Patch, StudioAction
 from ainovel.llm.errors import StructuredOutputError
 
 
@@ -29,17 +29,29 @@ class SayToGroup(Say):
     text: str = Field(min_length=1, description="当前在场角色能够感知的场景、台词或行动结果。")
 
 
+class CharacterDispatch(Model):
+    character: str = Field(min_length=1, description="在场角色的名字或已有 ID。")
+    direction: str = Field(default="", description="只发给这一项角色的提示词，可留空。")
+
+
 class Schedule(Model):
     """在用户要求开始/继续演绎，或已授权的演绎范围内，按顺序调度在场角色。仅讨论问题或修改设定时不调用。返回行动意图后由 GM 描述结果。"""
 
-    characters: list[str] = Field(
-        min_length=1, max_length=12, description="在场角色的名字或已有 ID，按运行顺序排列。"
+    characters: list[CharacterDispatch | str] = Field(
+        min_length=1,
+        max_length=12,
+        description="按运行顺序排列。每个角色可填写 character 和自己的 direction；无需提示时也可只填角色名字或 ID。",
     )
     direction: str = Field(
         default="",
-        description="只给单个被调度角色的私下提示，可提供线索或引导。公共情景和引导通过 say_to_group 发布。"
-        "多人调度时留空；不得包含幕后要求、别人私密信息或强制选择。",
+        description="兼容旧调用的共用提示词，仅当 characters 全部是字符串时可填写。新调用请给每个角色单独设置 direction。",
     )
+
+    @model_validator(mode="after")
+    def validate_directions(self):
+        if self.direction.strip() and any(isinstance(item, CharacterDispatch) for item in self.characters):
+            raise ValueError("使用角色调度项时，请将提示词填在对应角色的 direction 中")
+        return self
 
 
 class Edit(Model):
@@ -49,16 +61,20 @@ class Edit(Model):
         description="五类资料之一。"
     )
     target: str = Field(default="", description="已有实体的名字或 ID；world/creation 留空时针对实体列表。")
-    operations: list[Patch] = Field(
-        min_length=1, max_length=50, description="相对目标的 JSON Patch 操作列表。"
+    operations: list[NamedFieldEdit | Patch] = Field(
+        min_length=1,
+        max_length=50,
+        description="修改现有字段时优先使用 set_field 和字段名，删除用 remove_field。新增字段等操作支持 JSON Patch。",
     )
 
 
 class SelfEdit(Model):
     """修改自己的可见描述或变量；仅在当前幕生效，演绎重置后撤销。"""
 
-    operations: list[Patch] = Field(
-        min_length=1, max_length=20, description="针对自身可见 Entity 的描述/变量条目进行 patch。"
+    operations: list[NamedFieldEdit | Patch] = Field(
+        min_length=1,
+        max_length=20,
+        description="可用 set_field 或 remove_field 按名称操作自己的可见字段，也支持 JSON Patch。",
     )
 
 
@@ -78,7 +94,8 @@ class RewindPerformance(Model):
     )
     target: str = Field(
         default="",
-        description="timeline.steps 中的操作 ID，或 current_scene.events 中的消息 ID；保留该位置及之前的操作。start 表示回到开始记录的位置。只能选当前路径中的位置。",
+        description="用 #7 指第 7 条演绎事件，用 step:3 指第 3 步回撤记录。也接受现有操作或事件 ID。"
+        "保留目标及之前的操作；start 表示回到开始记录的位置。只接受当前路径中的位置。",
     )
 
     @model_validator(mode="after")
@@ -110,7 +127,7 @@ class CreationSay(Say):
 
 
 class CreationEdit(Edit):
-    """按用户提供的信息增删改构思资料字段，使用 JSON Patch，无需一次填写完整。"""
+    """按用户提供的信息编辑构思资料。支持按字段名修改，也支持 JSON Patch。"""
 
     scope: Literal["world", "characters", "creation"] = Field(description="世界观、角色资料或创作要求。")
 
@@ -167,7 +184,7 @@ class WriteProse(Model):
 
 
 class WritingEdit(Edit):
-    """对「创作」资料执行 JSON Patch，支持增删改和 test。正文编辑使用专门的工具。"""
+    """编辑「创作」资料，支持按名称修改字段和 JSON Patch。正文编辑使用专门的工具。"""
 
     scope: Literal["creation"] = Field(default="creation", description="只允许操作创作资料。")
 

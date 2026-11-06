@@ -228,6 +228,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/studio/novels/{key}/gm-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Gm Template */
+        post: operations["save_gm_template_api_studio_novels__key__gm_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/gm-template-selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Select Gm Template */
+        post: operations["select_gm_template_api_studio_novels__key__gm_template_selection_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/gm-template-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Gm Template */
+        post: operations["preview_gm_template_api_studio_novels__key__gm_template_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/studio/novels/{key}/preview": {
         parameters: {
             query?: never;
@@ -2050,6 +2101,8 @@ export interface components {
             };
             /** Context Source */
             context_source: string;
+            /** Gm Context Source */
+            gm_context_source?: string | null;
         };
         /** Event */
         Event: {
@@ -2522,6 +2575,56 @@ export interface components {
             instruction: string;
             /** Prompt Templates */
             prompt_templates?: components["schemas"]["PromptTemplateSelection"][];
+        };
+        /** GmTemplate */
+        GmTemplate: {
+            /** Id */
+            id?: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+        };
+        /** GmTemplatePreview */
+        GmTemplatePreview: {
+            /** Source */
+            source: string | null;
+            /**
+             * Scene Id
+             * @default
+             */
+            scene_id: string;
+            /**
+             * Branch Id
+             * @default
+             */
+            branch_id: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+        };
+        /** GmTemplateSave */
+        GmTemplateSave: {
+            /** Version */
+            version: number;
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+        };
+        /** GmTemplateSelection */
+        GmTemplateSelection: {
+            /** Version */
+            version: number;
+            /** Id */
+            id: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4002,6 +4105,8 @@ export interface components {
             };
             /** Context Source */
             context_source: string;
+            /** Gm Context Source */
+            gm_context_source?: string | null;
         };
         /** SetupDraft */
         "SetupDraft-Input": {
@@ -4411,6 +4516,12 @@ export interface components {
              * @default {{ data | tojson }}
              */
             context_source: string;
+            /** Gm Context Source */
+            gm_context_source?: string | null;
+            /** Gm Templates */
+            gm_templates?: components["schemas"]["GmTemplate"][];
+            /** Active Gm Template Id */
+            active_gm_template_id?: string | null;
             /**
              * Busy
              * @default false
@@ -5509,6 +5620,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_gm_template_api_studio_novels__key__gm_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmTemplateSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_gm_template_api_studio_novels__key__gm_template_selection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmTemplateSelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_gm_template_api_studio_novels__key__gm_template_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmTemplatePreview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

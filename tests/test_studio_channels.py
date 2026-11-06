@@ -89,7 +89,7 @@ async def test_gm_delivers_tools_then_ends_without_pause_or_extra_calls():
     ]
 
     async def actor(mode, data, history, request):
-        assert data["current_scene"]["channel"] == "character_group"
+        assert data.current_scene.present[0].id == a.id
         assert history[0].role == "user" and history[0].content == "让甲听见敲门声"
         if n.calls == 2:
             assert history[-1].role == "tool"
@@ -175,14 +175,6 @@ async def test_private_direction_and_self_edits_are_ordered_for_writing_and_rewi
         pass
 
     runner = StudioRunner(n, SimpleNamespace(save=save), Settings(_env_file=None), actor=actor)
-    with pytest.raises(ValueError, match="只发给一个角色"):
-        await runner.execute(
-            "gm",
-            s,
-            StudioAction(
-                name="schedule_characters", arguments={"characters": [a.id, b.id], "direction": hint}
-            ),
-        )
     await runner.run("gm", s)
     assert not n.error
     assert hint in json.dumps(role_context(n, s, a.id), ensure_ascii=False)
@@ -199,6 +191,88 @@ async def test_private_direction_and_self_edits_are_ordered_for_writing_and_rewi
     s.confirmed = True
     await runner.run("writing", s)
     assert not n.error and s.text == "整幕正文"
+
+
+@pytest.mark.parametrize("direction", ["", "从门口观察线索"])
+async def test_group_dispatch_accepts_optional_direction_without_broadcasting(direction):
+    novel, scene, a, b = fixture()
+    observer = a.model_copy(update={"id": "observer", "name": "旁观者"})
+    novel.characters.append(observer)
+    for character in (a, b, observer):
+        emit(scene, "enter", f"{character.name}入场", character.id)
+    received = []
+
+    async def save(_):
+        pass
+
+    async def actor(mode, data, history, request):
+        received.append((data["self"]["id"], data["direction"]))
+        return StudioAction(name="reply", text="收到")
+
+    runner = StudioRunner(novel, SimpleNamespace(save=save), Settings(_env_file=None), actor=actor)
+    await runner.execute(
+        "gm",
+        scene,
+        StudioAction(
+            name="schedule_characters", arguments={"characters": [a.id, b.id], "direction": direction}
+        ),
+    )
+    assert received == [(a.id, direction), (b.id, direction)]
+    hints = [event for event in scene.events if event.kind == "gm_direction"]
+    assert [(event.audience, event.text) for event in hints] == (
+        [([a.id], direction), ([b.id], direction)] if direction else []
+    )
+    history = role_context(novel, scene, observer.id)["history"]
+    assert all(event["kind"] != "gm_direction" for item in history for event in item["events"])
+
+
+@pytest.mark.parametrize(
+    ("directions", "expected_hints"),
+    [
+        (("检查北门", "留意窗外"), ("检查北门", "留意窗外")),
+        (("检查北门", ""), ("检查北门",)),
+    ],
+)
+async def test_group_dispatch_uses_each_characters_own_direction(directions, expected_hints):
+    novel, scene, a, b = fixture()
+    for character in (a, b):
+        emit(scene, "enter", f"{character.name}入场", character.id)
+    received = []
+
+    async def save(_):
+        pass
+
+    async def actor(mode, data, history, request):
+        received.append((data["self"]["id"], data["direction"]))
+        assert all(event["kind"] != "gm_direction" for item in data["history"] for event in item["events"])
+        return StudioAction(name="reply", text="收到")
+
+    runner = StudioRunner(novel, SimpleNamespace(save=save), Settings(_env_file=None), actor=actor)
+    arguments = {
+        "characters": [
+            {"character": a.name, "direction": directions[0]},
+            {"character": b.name, **({"direction": directions[1]} if directions[1] else {})},
+        ]
+    }
+    decoded = StudioDecoder("gm").decode(
+        ProviderMessage(
+            role="assistant",
+            tool_calls=[
+                {
+                    "id": "dispatch",
+                    "function": {
+                        "name": "schedule_characters",
+                        "arguments": json.dumps(arguments),
+                    },
+                }
+            ],
+        )
+    )
+    await runner.execute("gm", scene, decoded.actions[0])
+    assert received == [(a.id, directions[0]), (b.id, directions[1])]
+    hints = [event for event in scene.events if event.kind == "gm_direction"]
+    assert tuple(event.text for event in hints) == expected_hints
+    assert [event.audience for event in hints] == [[character.id] for character in (a, b)][: len(hints)]
 
 
 @pytest.mark.parametrize(

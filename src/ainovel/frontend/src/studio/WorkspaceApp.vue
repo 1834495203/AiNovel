@@ -9,11 +9,13 @@ import FieldsPanel from './FieldsPanel.vue';
 import StagePanel from './StagePanel.vue';
 import TemplateDrawer from './TemplateDrawer.vue';
 import SettingsDrawer from './SettingsDrawer.vue';
+import ContextTemplatesPage from './ContextTemplatesPage.vue';
 import type {Entity,Novel} from '../studio-api';
 const w=reactive(useWorkspace()),mobile=useMobile(),dialog=useDialog();
 const tab=ref<'chat'|'stage'|'prose'|'fields'>('chat'),sidebar=ref(false),templates=ref(false),settings=ref(false),review=ref(false),trash=ref(false),search=ref('');
 const naming=ref(false),name=ref(''),fieldsRef=ref<InstanceType<typeof FieldsPanel>|null>(null),drawerFieldsRef=ref<InstanceType<typeof FieldsPanel>|null>(null),fieldsDrawer=ref(false);
 const savedError=ref(''),readerSize=ref(17),writingChat=ref(false);
+const contextTemplates=ref(false);
 const readerSizes=[{label:'小字',value:15},{label:'标准',value:17},{label:'大字',value:20}];
 const filteredBooks=computed(()=>w.books.filter(b=>b.deleted===trash.value&&b.title.toLowerCase().includes(search.value.toLowerCase())));
 const drafts=computed(()=>filteredBooks.value.filter(b=>!b.created)),published=computed(()=>filteredBooks.value.filter(b=>b.created));
@@ -30,7 +32,7 @@ const writingMenu=computed(()=>[
 const actions=computed(()=>{
  if(!w.novel)return [];
  if(w.novel.deleted)return [{label:'恢复作品',key:'restore'},{label:'永久删除',key:'purge'}];
- return [{label:'修改书名',key:'rename',disabled:w.busy||!w.editable},{label:'字段模板',key:'templates'},{label:'上下文与提示词',key:'settings',disabled:w.busy},{type:'divider' as const,key:'divider'},
+ return [{label:'修改书名',key:'rename',disabled:w.busy||!w.editable},{label:'字段模板',key:'templates'},{label:'上下文模板',key:'contextTemplates'},{label:'上下文与提示词',key:'settings',disabled:w.busy},{type:'divider' as const,key:'divider'},
  ...(w.scene?[{label:'从此幕创建分支',key:'branch',disabled:w.busy},...(w.editable?[{label:'重置当前演绎',key:'reset',disabled:w.busy}]:[])]:[]),{label:'移入回收站',key:'delete',disabled:w.busy}];
 });
 function dismissError(){w.error='';savedError.value=`${w.novel?.run_id}:${w.novel?.error}`}
@@ -44,7 +46,7 @@ async function writingAction(kind:'undo_prose'|'finish_chapter'){
 function reset(){dialog.warning({title:'重新演绎这一幕？',content:'本次群聊、进出场和临时角色变化会被废弃。世界观、人物设定等编辑会保留。',positiveText:'重置演绎',negativeText:'保留当前演绎',onPositiveClick:()=>control('reset')})}
 function remove(){dialog.warning({title:'移入回收站？',content:'正文、角色、演绎和分支都会保留，可以之后恢复。',positiveText:'移入回收站',negativeText:'取消',onPositiveClick:async()=>{await control('delete');w.home();trash.value=true}})}
 function purge(){dialog.error({title:'永久删除这部作品？',content:'该书全部资料、对话、演绎、分支和正文都会被删除，无法恢复。',positiveText:'永久删除',negativeText:'取消',onPositiveClick:()=>w.purge()})}
-function menu(key:string){if(key==='rename'){name.value=w.novel?.title??'';naming.value=true}else if(key==='templates')templates.value=true;else if(key==='settings')settings.value=true;else if(key==='reset')reset();else if(key==='delete')remove();else if(key==='purge')purge();else if(key==='branch')control('branch',{branch_id:w.archive});else if(key==='restore')control('restore')}
+function menu(key:string){if(key==='rename'){name.value=w.novel?.title??'';naming.value=true}else if(key==='templates')templates.value=true;else if(key==='contextTemplates'){contextTemplates.value=true;writingChat.value=false}else if(key==='settings')settings.value=true;else if(key==='reset')reset();else if(key==='delete')remove();else if(key==='purge')purge();else if(key==='branch')control('branch',{branch_id:w.archive});else if(key==='restore')control('restore')}
 async function rename(){const value=await w.edit({scope:'creation',title:name.value});if(value)naming.value=false}
 async function confirmCreation(){const value=await w.control('confirm_creation');if(value?.created){review.value=false;tab.value='chat'}}
 async function applyTemplate(id:string){if(await w.applyTemplate(id))templates.value=false}
@@ -55,7 +57,7 @@ async function newCharacter(){showFields();await nextTick();(mobile.value?fields
 function reviewFields(){review.value=false;showFields()}
 function keyHash(){const id=location.hash.match(/^#studio\/(.+)$/)?.[1];if(id&&id!==w.novel?.id)openBook(id);else if(!id&&w.novel)w.home()}
 // Loading a saved failure is not a new failure. Only later failures may raise a banner.
-watch(()=>w.novel?.id,()=>{savedError.value=`${w.novel?.run_id}:${w.novel?.error}`;tab.value='chat'});
+watch(()=>w.novel?.id,()=>{savedError.value=`${w.novel?.run_id}:${w.novel?.error}`;tab.value='chat';contextTemplates.value=false});
 watch([tab,()=>w.scene?.entity.id,()=>w.archive],()=>{writingChat.value=false});
 onMounted(()=>{w.initialize();window.addEventListener('hashchange',keyHash)});
 onUnmounted(()=>window.removeEventListener('hashchange',keyHash));
@@ -68,6 +70,9 @@ onUnmounted(()=>window.removeEventListener('hashchange',keyHash));
  <template v-else><div v-if="!filteredBooks.length&&!trash&&!search" class="library-start"><div class="start-illustration"><BookOpen :size="44"/><span class="spark-one">✦</span><span class="spark-two">✦</span></div><h2>每个故事，都始于一次对话</h2><p>不必先填满设定。告诉 AI 你的想法，边聊边完善。</p><div><NButton type="primary" size="large" @click="create">开始构思</NButton><NButton secondary size="large" @click="templates=true">先看看字段模板</NButton></div></div><NEmpty v-else-if="!filteredBooks.length" :description="search?'没有找到匹配的作品':'回收站是空的'"/>
  <section v-if="drafts.length" class="book-section"><header><h2>{{trash?'构思草稿':'继续构思'}}<small>{{drafts.length}}</small></h2><p>这些想法还没有正式建书，继续聊下去。</p></header><div class="book-grid"><button v-for="book in drafts" :key="book.id" class="book-card draft-card" @click="openBook(book.id)"><div class="book-card-icon"><MessageCircle :size="25"/></div><span class="card-kind">构思草稿</span><h3>{{book.title}}</h3><span class="book-card-action">{{book.busy?'AI 正在运行':'继续与 AI 沟通'}} <ArrowLeft :size="15" class="right-arrow"/></span></button></div></section>
  <section v-if="published.length" class="book-section"><header><h2>我的小说<small>{{published.length}}</small></h2></header><div class="book-grid"><button v-for="book in published" :key="book.id" class="book-card" @click="openBook(book.id)"><div class="book-card-icon"><BookOpen :size="25"/></div><span class="card-kind">{{book.busy?'演绎运行中':'小说'}}</span><h3>{{book.title}}</h3><span class="book-card-action">进入创作 <ArrowLeft :size="15" class="right-arrow"/></span></button></div></section></template><footer class="library-footer"><button @click="templates=true">字段模板</button><span>设定可以慢慢完善，人物会找到自己的路。</span><form v-if="mobile" action="/logout" method="post"><NButton text attr-type="submit">退出登录</NButton></form></footer></div></main>
+ <ContextTemplatesPage v-else-if="contextTemplates" :novel="w.novel" :scenes="w.scenes" :scene-id="w.scene?.entity.id??''"
+  :branch-id="w.archive" :message="w.draft" :default-source="w.contracts?.gm_context_source??''"
+  :schema="w.contracts?.gm_context_schema" :busy="w.busy" @back="contextTemplates=false" @updated="w.setNovel"/>
  <template v-else><div v-if="w.loading" class="workspace-loading"><NSkeleton text :repeat="6"/></div><div v-else class="work-area">
  <aside v-if="!mobile&&w.novel.created" class="desktop-directory"><div class="directory-heading"><span>章节与幕</span><NButton text size="small" aria-label="字段模板" @click="templates=true"><Layers :size="16"/></NButton></div><div class="directory-scroll"><NSelect :value="w.archive" @update:value="w.chooseArchive" :options="[{label:'当前路线',value:''},...w.novel.branches.map(b=>({label:b.name,value:b.id}))]" size="small" aria-label="写作路线"/><section v-for="c in archiveChapters" :key="c.entity.id" class="directory-chapter"><h3>{{c.entity.name}}</h3><button v-for="s in w.scenes.filter(s=>s.chapter_id===c.entity.id)" :key="s.entity.id" :class="['scene-link',{active:w.scene?.entity.id===s.entity.id}]" @click="chooseScene(s.entity.id)"><span class="scene-dot" :class="{confirmed:s.confirmed,written:!!s.text}"/><span>{{s.entity.name}}</span><small>{{s.text?'正文':s.confirmed?'确认':''}}</small></button></section></div><div class="directory-footer"><NButton block type="primary" secondary :disabled="w.busy||!!w.archive||!!w.novel.scenes.length&&!w.novel.scenes.at(-1)?.confirmed" @click="control('new_scene')"><template #icon><Plus :size="16"/></template>{{w.novel.scenes.length?'下一幕':'创建第一幕'}}</NButton><NButton block quaternary :disabled="w.busy||!!w.archive||!w.novel.chapters.at(-1)?.completed" @click="control('new_scene',{new_chapter:true})">开启新章节</NButton></div></aside>
  <section class="workspace-main"><div v-if="tab!=='prose'" class="workspace-toolbar"><div class="workspace-heading"><span class="eyebrow">{{w.novel.created?chapter?.entity.name??'准备开始':'先沟通构思，确认后再创建小说'}}</span><h1>{{w.novel.created?w.scene?.entity.name??'开始你的第一幕':'和 AI 一起构思'}}</h1></div><div class="workspace-tools"><NTag v-if="w.scene&&!w.editable" :bordered="false" size="small">{{w.scene.text?'已写正文':'已确认'}}</NTag><NButton v-if="!mobile" secondary :disabled="w.busy" @click="showFields">查看设定</NButton><NButton v-if="w.scene&&w.editable" type="primary" secondary :disabled="w.busy" :loading="w.action==='confirm_scene'" @click="control('confirm_scene')">确认这一幕</NButton><NButton v-else-if="w.scene&&!w.novel.deleted" secondary :disabled="w.busy" @click="control('branch',{branch_id:w.archive})"><template #icon><Waypoints :size="15"/></template>{{mobile?'分支修改':'从此幕创建分支'}}</NButton></div></div>

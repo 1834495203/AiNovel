@@ -45,6 +45,26 @@ class Patch(Model):
     value: JsonValue = Field(default=None, description="add/replace/test 的值；remove 无需值。")
 
 
+class NamedFieldEdit(Model):
+    op: Literal["set_field", "remove_field"]
+    field: str = Field(min_length=1, description="现有描述名称或变量名，按原名填写。")
+    kind: Literal["description", "attribute"] | None = Field(
+        default=None, description="同名时指定描述或变量。"
+    )
+    property: str = Field(
+        default="", description="可选。指定要更新的属性，例如 how 或 visibility；默认更新字段值。"
+    )
+    value: JsonValue = Field(default=None, description="set_field 的新值；remove_field 删除整个字段。")
+
+    @model_validator(mode="after")
+    def validate_operation(self):
+        if self.op == "set_field" and "value" not in self.model_fields_set:
+            raise ValueError("set_field 需要提供 value")
+        if self.op == "remove_field" and self.property:
+            raise ValueError("remove_field 删除整个字段，不能指定 property")
+        return self
+
+
 class StageEvent(Model):
     id: str = Field(default_factory=identity)
     kind: Literal["gm", "gm_direction", "role", "enter", "leave", "self_edit"]
@@ -152,6 +172,12 @@ class TurnCheckpoint(Model):
     channel: TurnChannel = "discussion"
 
 
+class GmTemplate(Model):
+    id: str = Field(default_factory=identity)
+    name: str
+    source: str
+
+
 class StudioNovel(Model):
     id: str = Field(default_factory=identity)
     version: int = 0
@@ -170,6 +196,9 @@ class StudioNovel(Model):
     compression: Compression = Field(default_factory=Compression)
     prompts: dict[str, str] = Field(default_factory=dict)
     context_source: str = "{{ data | tojson }}"
+    gm_context_source: str | None = None
+    gm_templates: list[GmTemplate] = Field(default_factory=list)
+    active_gm_template_id: str | None = None
     busy: bool = False
     run_id: str = ""
     running: str = ""

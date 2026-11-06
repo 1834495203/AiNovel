@@ -146,6 +146,14 @@ def rewind(novel, scene, *, steps=None, target=""):
     if not timeline.head and target != "start":
         raise ValueError("已在开始记录的位置，没有更早的步骤可回撤")
     path = active_path(timeline)
+    if target.startswith(("#", "step:")):
+        event_target = target.startswith("#")
+        number = target[1:] if event_target else target[5:]
+        items = scene.events if event_target else path
+        label = "演绎事件" if event_target else "回撤步骤"
+        if not number.isascii() or not number.isdecimal() or not 1 <= int(number) <= len(items):
+            raise ValueError(f"{label}编号无效，当前有 {len(items)} 条")
+        target = items[int(number) - 1].id
     if target:
         if target == "start":
             head = ""

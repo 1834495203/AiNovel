@@ -10,7 +10,8 @@ from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 
 from ainovel.core.entities import Entity
-from ainovel.core.performance_timeline import record_change, rewind, timeline_context
+from ainovel.core.gm_context import GmContext, gm_context, legacy_gm_data
+from ainovel.core.performance_timeline import record_change, rewind
 from ainovel.core.prose_edits import (
     apply_prose_edits,
     paragraph_ranges,
@@ -27,7 +28,7 @@ from ainovel.core.studio import (
     gm_discussion_text,
 )
 from ainovel.core.studio_state import (
-    apply_patch,
+    apply_field_edits,
     edit_self,
     emit,
     present,
@@ -53,6 +54,7 @@ from ainovel.llm.schemas import (
 from ainovel.llm.transport import OpenAICompatibleTransport
 
 MODES = ("creation", "gm", "role", "writing", "writing_chat", "summary")
+DEFAULT_CONTEXT_SOURCE = "{{ data | tojson }}"
 ENV = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
 ENV.globals.clear()
 ENV.policies["json.dumps_kwargs"] = {**ENV.policies["json.dumps_kwargs"], "ensure_ascii": False}
@@ -63,77 +65,48 @@ def defaults():
     return {mode: (root / f"studio_{mode}.j2").read_text(encoding="utf-8") for mode in MODES}
 
 
-def resolve_character(novel, name):
-    found = [c for c in novel.characters if c.id == name or c.name == name]
+def default_gm_context_source() -> str:
+    return (Path(__file__).resolve().parents[1] / "prompts" / "studio_gm_context.j2").read_text(
+        encoding="utf-8"
+    )
+
+
+def resolve_character(novel, name, scene=None):
+    characters = role_states(novel, scene) if scene else {c.id: c for c in novel.characters}
+    if name in characters:
+        return characters[name]
+    found = [c for c in characters.values() if c.name == name]
+    if not found and scene:
+        found = [characters[c.id] for c in novel.characters if c.id in characters and c.name == name]
     if len(found) != 1:
         raise ValueError("角色不存在或重名，请使用返回的已有 ID")
     return found[0]
 
 
-def scene_data(scene, *, positions=False):
+def scene_data(scene):
     return {
         "scene": scene.entity.model_dump(mode="json"),
         "events": [
             {
-                **({"id": e.id, "position": index + 1} if positions else {}),
                 "kind": e.kind,
                 "actor_id": e.actor_id,
                 "text": e.text,
                 **({"audience": e.audience} if e.kind in ("gm_direction", "self_edit") else {}),
             }
-            for index, e in enumerate(scene.events)
+            for e in scene.events
         ],
         "text": scene.text,
     }
 
 
-def gm_context(novel, scene):
-    chapters = []
-    target_index = next(i for i, c in enumerate(novel.chapters) if c.entity.id == scene.chapter_id)
-    for index, chapter in enumerate(novel.chapters[: target_index + 1]):
-        distance = target_index - index
-        scenes = [s for s in novel.scenes if s.chapter_id == chapter.entity.id]
-        # No future scenes even when chapters have already been planned.
-        scenes = [s for s in scenes if novel.scenes.index(s) <= novel.scenes.index(scene)]
-        scenes = [s for s in scenes if s.entity.id != scene.entity.id]
-        if distance < novel.compression.full_chapters or chapter.summary_stale or not chapter.summary:
-            content = [scene_data(s) for s in scenes]
-            level = "full"
-        elif distance < novel.compression.full_chapters + novel.compression.scene_chapters:
-            content = [
-                {
-                    "scene": s.entity.model_dump(mode="json"),
-                    "events": scene_data(s)["events"],
-                }
-                for s in scenes
-            ]
-            level = "scenes"
-        else:
-            content = chapter.summary
-            level = "summary"
-        chapters.append({"name": chapter.entity.name, "level": level, "content": content})
-    return {
-        "title": novel.title,
-        "world": [e.model_dump(mode="json") for e in novel.world],
-        "creation": [e.model_dump(mode="json") for e in novel.creation],
-        "characters": [e.model_dump(mode="json") for e in role_states(novel, scene).values()],
-        "chapter_scenes": [
-            s.entity.model_dump(mode="json") for s in novel.scenes if s.chapter_id == scene.chapter_id
-        ],
-        "current_scene": {
-            **scene_data(scene, positions=True),
-            "channel": "character_group",
-            "audience": present(scene),
-        },
-        "present": present(scene),
-        "present_count": len(present(scene)),
-        "timeline": timeline_context(scene),
-        "chapters": chapters,
-    }
-
-
 def conversation_history(messages):
     return [Message(role=m.role, content=m.content) for m in messages]
+
+
+def gm_turn_messages(messages, draft=None):
+    if draft is None and messages and messages[-1].role == "user":
+        return messages[:-1], conversation_history(messages[-1:])
+    return messages, [Message(role="user", content=draft)] if draft else []
 
 
 def writing_scene_context(novel, scene):
@@ -157,10 +130,32 @@ def writing_chat_context(novel, scene):
 
 
 def build_request(settings, novel, mode, data, history=None):
-    source = novel.prompts.get(mode, defaults()[mode])
+    override = novel.prompts.get(mode)
+    source = override if override is not None else defaults()[mode]
+    context_source = novel.context_source
+    context_data = prompt_data = data
+    if isinstance(data, GmContext):
+        selected = novel.active_gm_template_id
+        gm_source = novel.gm_context_source
+        if selected == "default":
+            gm_source = default_gm_context_source()
+        elif selected:
+            gm_source = next(template.source for template in novel.gm_templates if template.id == selected)
+        legacy_layout = gm_source is None and context_source.strip() != DEFAULT_CONTEXT_SOURCE
+        context_data = data.model_dump(mode="json")
+        prompt_data = context_data
+        if legacy_layout or override is not None:
+            legacy = legacy_gm_data(data)
+            if override is not None:
+                prompt_data = legacy
+            if legacy_layout:
+                context_data = legacy
+                history = [Message(role=m.role, content=m.text) for m in data.discussion] + (history or [])
+        if not legacy_layout:
+            context_source = gm_source if gm_source is not None else default_gm_context_source()
     try:
-        role_prompt = ENV.from_string(source).render(data=data)
-        context = ENV.from_string(novel.context_source).render(data=data)
+        role_prompt = ENV.from_string(source).render(data=prompt_data)
+        context = ENV.from_string(context_source).render(data=context_data)
     except TemplateError as error:
         raise ValueError(f"Jinja 模板无法渲染：{error}") from error
     schemas = tool_schemas(mode) if mode not in ("writing", "summary") else []
@@ -213,17 +208,18 @@ def edit_fields(novel, scene, args):
     if scope == "characters":
         if not target:
             raise ValueError("新建角色使用 create_character；修改角色请指定目标")
-        entity = resolve_character(novel, target)
+        entity = resolve_character(novel, target, scene)
         if scene and scene.character_patches.get(entity.id):
             raise ValueError("该角色已有演绎变化，请先重置演绎再修改其设定")
-        base = role_states(novel, scene)[entity.id] if scene else entity
-        candidate = Entity.model_validate(apply_patch(base.model_dump(mode="json"), args.operations))
+        updated, patches = apply_field_edits(entity.model_dump(mode="json"), args.operations)
+        candidate = Entity.model_validate(updated)
         if candidate.id != entity.id:
             raise ValueError("不能修改内部 ID")
-        if any(c.id != entity.id and c.name == candidate.name for c in novel.characters):
+        characters = role_states(novel, scene).values() if scene else novel.characters
+        if any(c.id != entity.id and c.name == candidate.name for c in characters):
             raise ValueError("角色名字重复")
         if scene:
-            scene.settings_patches.setdefault(entity.id, []).extend(args.operations)
+            scene.settings_patches.setdefault(entity.id, []).extend(patches)
         else:
             novel.characters[novel.characters.index(entity)] = candidate
         return candidate.model_dump(mode="json")
@@ -243,7 +239,8 @@ def edit_fields(novel, scene, args):
         if scope == "chapters" and scene and item.entity.id != scene.chapter_id:
             raise ValueError("只能修改当前章节资料")
         entity = item.entity if scope in ("chapters", "scenes") else item
-        candidate = Entity.model_validate(apply_patch(entity.model_dump(mode="json"), args.operations))
+        updated, _ = apply_field_edits(entity.model_dump(mode="json"), args.operations)
+        candidate = Entity.model_validate(updated)
         if candidate.id != entity.id:
             raise ValueError("不能修改内部 ID")
         if scope in ("chapters", "scenes"):
@@ -253,7 +250,7 @@ def edit_fields(novel, scene, args):
         return candidate.model_dump(mode="json")
     if scope not in ("world", "creation"):
         raise ValueError("此类别需要指定目标")
-    values = apply_patch([e.model_dump(mode="json") for e in collection], args.operations)
+    values, _ = apply_field_edits([e.model_dump(mode="json") for e in collection], args.operations)
     if not isinstance(values, list):
         raise ValueError("资料类别必须是实体列表")
     known = {e.id for e in collection}
@@ -369,10 +366,10 @@ class StudioRunner:
             return StudioAction(
                 name="say_to_group", arguments={"text": "场景开始。各位根据自己的目标决定如何行动。"}
             )
-        if mode == "gm" and data["present"] and "schedule_characters" not in calls:
+        if mode == "gm" and data.current_scene.present and "schedule_characters" not in calls:
             return StudioAction(
                 name="schedule_characters",
-                arguments={"characters": data["present"]},
+                arguments={"characters": [character.id for character in data.current_scene.present]},
             )
         if mode == "role":
             return StudioAction(name="reply", text=data["self"]["name"] + "：我先观察周围，再决定是否靠近。")
@@ -397,7 +394,7 @@ class StudioRunner:
             event = self.change(
                 scene,
                 "gm_direction",
-                "GM 私下提示：" + character.name,
+                "GM 调度提示词：" + character.name,
                 lambda n, s: emit(s, "gm_direction", direction, character.id, audience=[character.id]),
                 actor_id=character.id,
             )
@@ -512,15 +509,16 @@ class StudioRunner:
                 message="已从起始状态重放到选定位置；后续操作不再生效，用户讨论保留", data=data
             )
         if action.name == "schedule_characters":
-            if args.direction.strip() and len(args.characters) != 1:
-                raise ValueError("私下提示只发给一个角色；共有情景和引导请用 say_to_group 发到群聊")
             replies = []
-            for name in args.characters:
-                character = resolve_character(novel, name)
+            for item in args.characters:
+                name, direction = (
+                    (item, args.direction) if isinstance(item, str) else (item.character, item.direction)
+                )
+                character = resolve_character(novel, name, scene)
                 if character.id not in present(scene):
                     replies.append({"character": character.name, "skipped": "不在场，未运行"})
                     continue
-                reply = await self.role(scene, character, args.direction)
+                reply = await self.role(scene, character, direction)
                 replies.append({"character": character.name, "reply": reply})
             return ToolOutcome(
                 message="角色回复已写入角色群聊。请用 say_to_group 描述客观结果，不要把角色回复转发给用户代替场景叙述。",
@@ -618,7 +616,9 @@ class StudioRunner:
         elif action.name == "reset_performance":
             reset(scene)
         elif action.name == "create_character":
-            if any(e.name == args.name for e in novel.characters):
+            if any(e.name == args.name for e in novel.characters) or (
+                scene and any(e.name == args.name for e in role_states(novel, scene).values())
+            ):
                 raise ValueError("角色名字已存在")
             entity = initialize_entity(novel.template_fields.characters, args)
             novel.characters.append(entity)
@@ -632,7 +632,7 @@ class StudioRunner:
                 data=edit_fields(novel, scene, args),
             )
         elif action.name in ("enter_character", "remove_character"):
-            character = resolve_character(novel, args.character)
+            character = resolve_character(novel, args.character, scene)
             entering = action.name == "enter_character"
             if (character.id in present(scene)) == entering:
                 raise ValueError("角色已在场" if entering else "角色不在场")
@@ -674,12 +674,13 @@ class StudioRunner:
                     if scene
                     else novel.creation_messages
                 )
-                history = conversation_history(messages)
+                discussion, active = gm_turn_messages(messages) if mode == "gm" else ([], [])
+                history = active.copy() if mode == "gm" else conversation_history(messages)
                 while True:
                     data = (
                         writing_chat_context(novel, scene)
                         if writing_chat
-                        else gm_context(novel, scene)
+                        else gm_context(novel, scene, discussion)
                         if scene
                         else {
                             "title": novel.title,
@@ -715,12 +716,12 @@ class StudioRunner:
                         await self.save_progress()
                     if restarted:
                         if rewind_result:
-                            history = conversation_history(messages)
+                            history = active.copy()
                             item, result = rewind_result
                             self.begin_step(history, item)
                             self.tool_result(history, item, result)
                         else:
-                            history = []  # Discarded attempt results must not contaminate the new rehearsal.
+                            history = active.copy()
         except BudgetReached:
             self.send_user_message(scene, "本轮达到调用预算，已暂停并保留进度。", writing=writing_chat)
         except Exception as error:

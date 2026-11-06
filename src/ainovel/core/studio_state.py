@@ -4,7 +4,7 @@ import json
 from copy import deepcopy
 
 from ainovel.core.entities import Entity, visible_entity
-from ainovel.core.studio import Patch, StageEvent, StudioBranch, StudioNovel, StudioScene
+from ainovel.core.studio import NamedFieldEdit, Patch, StageEvent, StudioBranch, StudioNovel, StudioScene
 
 
 def apply_patch(document, operations: list[Patch]):
@@ -64,6 +64,48 @@ def apply_patch(document, operations: list[Patch]):
         except (KeyError, IndexError, TypeError) as error:
             raise ValueError("patch 路径不存在或类型错误") from error
     return result
+
+
+def apply_field_edits(document, operations: list[NamedFieldEdit | Patch]):
+    """Resolve names in the working copy and return the replayable JSON Patch."""
+    if all(isinstance(op, Patch) for op in operations):
+        return apply_patch(document, operations), operations
+
+    resolved = []
+    for op in operations:
+        patch = op
+        if isinstance(op, NamedFieldEdit):
+            if not isinstance(document, dict):
+                raise ValueError("按字段名修改时请先指定资料实体")
+            matches = []
+            for kind, section, key, default in (
+                ("description", "description", "name", "value"),
+                ("attribute", "special_attributes", "key", "current_value"),
+            ):
+                entries = document.get(section)
+                if op.kind not in (None, kind) or not isinstance(entries, list):
+                    continue
+                matches.extend(
+                    (f"/{section}/{index}", item, default)
+                    for index, item in enumerate(entries)
+                    if isinstance(item, dict) and item.get(key) == op.field
+                )
+            if not matches:
+                raise ValueError(f"找不到可编辑字段「{op.field}」")
+            if len(matches) > 1:
+                raise ValueError(f"字段「{op.field}」重名，请用 kind 指定描述或变量")
+            path, item, default = matches[0]
+            if op.op == "remove_field":
+                patch = Patch(op="remove", path=path)
+            else:
+                prop = op.property or default
+                if prop not in item:
+                    raise ValueError(f"字段「{op.field}」没有属性「{prop}」")
+                escaped = prop.replace("~", "~0").replace("/", "~1")
+                patch = Patch(op="replace", path=f"{path}/{escaped}", value=op.value)
+        document = apply_patch(document, [patch])
+        resolved.append(patch)
+    return document, resolved
 
 
 def present(scene: StudioScene) -> list[str]:
@@ -160,15 +202,19 @@ def describe_self_edit(before: Entity, after: Entity) -> str:
     return "\n".join(changes)
 
 
-def edit_self(novel: StudioNovel, scene: StudioScene, character_id: str, operations: list[Patch]) -> bool:
+def edit_self(
+    novel: StudioNovel, scene: StudioScene, character_id: str, operations: list[NamedFieldEdit | Patch]
+) -> bool:
     before = role_states(novel, scene)[character_id]
     own = visible_entity(before, own=True)
     if any(
-        not (p.path.startswith("/description/") or p.path.startswith("/special_attributes/"))
+        isinstance(p, Patch)
+        and not (p.path.startswith("/description/") or p.path.startswith("/special_attributes/"))
         for p in operations
     ):
         raise ValueError("只能修改自己的描述或变量条目")
-    candidate = Entity.model_validate(apply_patch(own.model_dump(mode="json"), operations))
+    updated, _ = apply_field_edits(own.model_dump(mode="json"), operations)
+    candidate = Entity.model_validate(updated)
     if candidate == own:
         return False
     description = describe_self_edit(own, candidate)

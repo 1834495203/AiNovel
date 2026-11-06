@@ -107,6 +107,9 @@ async def test_rewind_restores_roles_fields_presence_events_and_new_characters_b
     assert [e.text for e in scene.events][-1] == "灯亮了"
     assert "甲决定先等候" not in json.dumps(role_context(n, scene, a.id), ensure_ascii=False)
     assert "changes" not in timeline_context(scene)["steps"][0]
+    assert rewind(n, scene, target="step:3")["position"] == 3
+    with pytest.raises(ValueError, match="回撤步骤编号无效"):
+        rewind(n, scene, target="step:4")
     rewind(n, scene, target="start")
     assert capture_state(n, scene) == initial
     assert n.calls == calls and scene.timeline.base == old_base
@@ -308,15 +311,15 @@ async def test_api_rewind_persists_cursor_records_user_edits_and_excludes_privat
         if not any(m.tool_calls for m in history):
             return StudioStep(
                 actions=[
-                    StudioAction(name="rewind_performance", arguments={"target": first_event}),
+                    StudioAction(name="rewind_performance", arguments={"target": "#1"}),
                     StudioAction(name="create_character", arguments={"name": "不应执行"}),
                 ]
             )
         assert [call.function.name for m in history if m.tool_calls for call in m.tool_calls] == [
             "rewind_performance"
         ]
-        assert data["world"] == original_world
-        assert data["timeline"]["position"] == 2 and data["present_count"] == 1
+        assert [entity.model_dump(mode="json") for entity in data.novel.world] == original_world
+        assert data.current_scene.rewind.position == 2 and len(data.current_scene.present) == 1
         return StudioAction(name="reply", text="已回到入场之后")
 
     monkeypatch.setattr(StudioRunner, "mock", actor)
@@ -325,10 +328,11 @@ async def test_api_rewind_persists_cursor_records_user_edits_and_excludes_privat
     assert len(n["characters"]) == 1 and n["scenes"][-1]["messages"][-1]["content"] == "已回到入场之后"
     assert n["scenes"][-1]["timeline"]["head"] == timeline["operations"][1]["id"]
     preview = (await client.get(path + "/preview", params={"scene_id": scene_id})).json()
-    data = json.loads(preview["messages"][2]["content"])
-    assert data["timeline"]["position"] == 2 and data["present_count"] == 1
-    assert data["current_scene"]["events"][0]["id"] == first_event
-    assert "base" not in data["timeline"] and all("changes" not in op for op in data["timeline"]["steps"])
+    rendered = preview["rendered_context"]
+    assert rendered == preview["messages"][2]["content"]
+    assert "当前位置第 2 步" in rendered and "在场 1 人" in rendered
+    assert "#1" in rendered and "step:2" in rendered and first_event not in rendered
+    assert "state_hash" not in rendered and '"changes"' not in rendered
     # Message-level withdrawal restores both the state and the operation cursor before that message.
     r = await client.post(
         path + "/turn",

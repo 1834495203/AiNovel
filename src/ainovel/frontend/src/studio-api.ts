@@ -11,9 +11,14 @@ export type Message = { id:string; role:string; content:string; checkpointed?:bo
 export type Scene = { entity:Entity; chapter_id:string; confirmed:boolean; messages:Message[]; writing_messages:Message[]; events:StageEvent[]; abandoned:StageEvent[][]; text:string };
 export type Chapter = { entity:Entity; summary:string; summary_stale:boolean; completed:boolean };
 export type Compression = { full_chapters:number; scene_chapters:number; snapshot_interval:number; max_calls:number };
-export type Novel = { turn_checkpoint:{scene_id:string;message_id:string;version:number;channel?:'discussion'|'writing'}|null; id:string; version:number; title:string; created:boolean; deleted:boolean; template_fields:TemplateFields; field_template_name:string; world:Entity[]; characters:Entity[]; creation:Entity[]; chapters:Chapter[]; scenes:Scene[]; branches:{id:string;name:string;scenes:Scene[];chapters:Chapter[]}[]; creation_messages:Message[]; compression:Compression; prompts:Record<string,string>; context_source:string; busy:boolean; run_id:string; running:string; error:string; calls:number; input_tokens:number; output_tokens:number };
+export type Novel = { turn_checkpoint:{scene_id:string;message_id:string;version:number;channel?:'discussion'|'writing'}|null; id:string; version:number; title:string; created:boolean; deleted:boolean; template_fields:TemplateFields; field_template_name:string; world:Entity[]; characters:Entity[]; creation:Entity[]; chapters:Chapter[]; scenes:Scene[]; branches:{id:string;name:string;scenes:Scene[];chapters:Chapter[]}[]; creation_messages:Message[]; compression:Compression; prompts:Record<string,string>; context_source:string; gm_context_source?:string|null; gm_templates?:GmTemplate[]; active_gm_template_id?:string|null; busy:boolean; run_id:string; running:string; error:string; calls:number; input_tokens:number; output_tokens:number };
 export type Card = Pick<Novel,'id'|'title'|'created'|'deleted'|'busy'>;
-export type Preview = { input_tokens:number; method:string; characters:Record<string,Entity>; present:string[]; messages:{role:string;content:string}[]; tools:unknown[] };
+export type Preview = { input_tokens:number; method:string; characters:Record<string,Entity>; present:string[]; messages:{role:string;content:string}[]; tools:unknown[]; mode?:string; rendered_context?:string };
+export type GmTemplate = {id:string;name:string;source:string};
+export type GmContextSchema = {
+ type?:string;description?:string;properties?:Record<string,GmContextSchema>;
+ items?:GmContextSchema;anyOf?:GmContextSchema[];enum?:string[];$ref?:string;$defs?:Record<string,GmContextSchema>;
+};
 export async function studio<T>(path:string, data?:unknown, method = data === undefined ? 'GET' : 'POST'):Promise<T> {
  const response=await fetch('/api/studio'+path,{method,cache:'no-store',credentials:'same-origin',headers:{'Content-Type':'application/json'},...(data===undefined?{}:{body:JSON.stringify(data)})});
  let body:unknown;

@@ -9,12 +9,14 @@ from jinja2 import TemplateError
 from pydantic import Field
 
 from ainovel.core.base import Model
-from ainovel.core.entities import Attribute, Description, EntityInput
+from ainovel.core.entities import Attribute, Description, Entity, EntityInput
 from ainovel.core.errors import ConflictError
+from ainovel.core.gm_context import GmContext, gm_context
 from ainovel.core.performance_timeline import record_change
 from ainovel.core.studio import (
     Compression,
     ConversationMessage,
+    GmTemplate,
     StudioBranch,
     StudioChapter,
     StudioNovel,
@@ -41,15 +43,17 @@ from ainovel.core.studio_tools import Edit, tool_schemas
 from ainovel.core.studio_turns import checkpoint, restore_turn
 from ainovel.mapper.studio import StudioRepository
 from ainovel.service.studio import (
+    DEFAULT_CONTEXT_SOURCE,
     ENV,
     MODES,
     StudioRunner,
     build_request,
     conversation_history,
+    default_gm_context_source,
     defaults,
     edit_fields,
     estimate,
-    gm_context,
+    gm_turn_messages,
 )
 
 TIMELINE_PRIVATE = {"base": True, "state_hash": True, "operations": {"__all__": {"changes"}}}
@@ -114,6 +118,7 @@ class SettingsRequest(VersionRequest):
     compression: Compression
     prompts: dict[str, str]
     context_source: str
+    gm_context_source: str | None = None
 
 
 class EstimateRequest(Model):
@@ -123,6 +128,24 @@ class EstimateRequest(Model):
     compression: Compression
     prompts: dict[str, str]
     context_source: str
+    gm_context_source: str | None = None
+
+
+class GmTemplateSave(VersionRequest):
+    id: str = ""
+    name: str = Field(min_length=1, max_length=80)
+    source: str
+
+
+class GmTemplateSelection(VersionRequest):
+    id: str | None
+
+
+class GmTemplatePreview(Model):
+    source: str | None
+    scene_id: str = ""
+    branch_id: str = ""
+    message: str = ""
 
 
 class NovelCard(Model):
@@ -181,7 +204,9 @@ def router(store, settings):
                 cls.__name__: cls.model_json_schema() for cls in (EntityInput, Description, Attribute)
             },
             "prompts": defaults(),
-            "context_source": "{{ data | tojson }}",
+            "context_source": DEFAULT_CONTEXT_SOURCE,
+            "gm_context_source": default_gm_context_source(),
+            "gm_context_schema": GmContext.model_json_schema(),
         }
 
     @api.get("/novels", response_model=list[NovelCard])
@@ -535,6 +560,8 @@ def router(store, settings):
         try:
             for source in [*request.prompts.values(), request.context_source]:
                 ENV.parse(source)
+            if request.gm_context_source is not None:
+                ENV.parse(request.gm_context_source)
         except TemplateError as error:
             raise ValueError(f"Jinja 模板语法错误：{error}") from error
         novel.compression, novel.prompts, novel.context_source = (
@@ -542,8 +569,64 @@ def router(store, settings):
             request.prompts,
             request.context_source,
         )
+        if "gm_context_source" in request.model_fields_set and request.gm_context_source != novel.gm_context_source:
+            novel.gm_context_source = request.gm_context_source
+            novel.active_gm_template_id = None
         await repository.save(novel)
         return novel
+
+    @api.post("/novels/{key}/gm-templates", response_model=StudioNovel, response_model_exclude=PUBLIC_NOVEL_EXCLUDE)
+    async def save_gm_template(key: str, request: GmTemplateSave):
+        novel = await writable(key, request.version)
+        name = request.name.strip()
+        if novel.deleted or not name:
+            raise ValueError("请选择可编辑的作品并填写模板名称")
+        if any(item.name.casefold() == name.casefold() and item.id != request.id for item in novel.gm_templates):
+            raise ValueError("模板名称已存在")
+        try:
+            ENV.parse(request.source)
+        except TemplateError as error:
+            raise ValueError(f"Jinja 模板语法错误：{error}") from error
+        if request.id:
+            template = next((item for item in novel.gm_templates if item.id == request.id), None)
+            if template is None:
+                raise ValueError("模板不存在")
+            template.name, template.source = name, request.source
+        else:
+            novel.gm_templates.append(GmTemplate(name=name, source=request.source))
+        await repository.save(novel)
+        return novel
+
+    @api.post("/novels/{key}/gm-template-selection", response_model=StudioNovel, response_model_exclude=PUBLIC_NOVEL_EXCLUDE)
+    async def select_gm_template(key: str, request: GmTemplateSelection):
+        novel = await writable(key, request.version)
+        if novel.deleted:
+            raise ValueError("小说在回收站中")
+        if request.id not in (None, "default") and not any(item.id == request.id for item in novel.gm_templates):
+            raise ValueError("模板不存在")
+        novel.active_gm_template_id = request.id
+        await repository.save(novel)
+        return novel
+
+    @api.post("/novels/{key}/gm-template-preview")
+    async def preview_gm_template(key: str, request: GmTemplatePreview):
+        novel = await repository.get(key)
+        novel.active_gm_template_id = None
+        if request.source is not None:
+            novel.gm_context_source = request.source
+        use_sample = not request.scene_id and not novel.scenes
+        if use_sample:
+            chapter = StudioChapter(entity=Entity(id="preview-chapter", name="示例章节", type="chapter"))
+            scene = StudioScene(
+                entity=Entity(id="preview-scene", name="示例幕", type="scene"),
+                chapter_id=chapter.entity.id,
+            )
+            novel.chapters.append(chapter)
+            novel.scenes.append(scene)
+        novel.created = True
+        scene_id = request.scene_id or novel.scenes[-1].entity.id
+        result = preview_data(novel, scene_id, request.message, request.branch_id)
+        return {"rendered_context": result["rendered_context"], "input_tokens": result["input_tokens"], "sample": use_sample}
 
     @api.get("/novels/{key}/preview")
     async def preview(key: str, scene_id: str = "", message: str = "", branch_id: str = ""):
@@ -556,6 +639,9 @@ def router(store, settings):
         novel.compression = request.compression
         novel.prompts = request.prompts
         novel.context_source = request.context_source
+        if "gm_context_source" in request.model_fields_set:
+            novel.gm_context_source = request.gm_context_source
+            novel.active_gm_template_id = None
         return preview_data(novel, request.scene_id, request.message, request.branch_id)
 
     def preview_data(novel, scene_id, message, branch_id=""):
@@ -567,24 +653,26 @@ def router(store, settings):
             novel.chapters = branch.chapters
         scene = find_scene(novel, scene_id) if novel.created and scene_id else None
         mode = "gm" if scene else "creation"
-        data = (
-            gm_context(novel, scene)
-            if scene
-            else {
+        if scene:
+            discussion, history = gm_turn_messages(scene.messages, message)
+            data = gm_context(novel, scene, discussion)
+        else:
+            data = {
                 "title": novel.title,
                 "world": [e.model_dump(mode="json") for e in novel.world],
                 "characters": [e.model_dump(mode="json") for e in novel.characters],
                 "creation": [e.model_dump(mode="json") for e in novel.creation],
             }
-        )
-        history = scene.messages if scene else novel.creation_messages
-        from ainovel.llm.schemas import Message
+            history = conversation_history(novel.creation_messages)
+            if message:
+                from ainovel.llm.schemas import Message
 
-        request = build_request(settings, novel, mode, data, conversation_history(history))
-        if message:
-            request.body.messages.append(Message(role="user", content=message))
+                history.append(Message(role="user", content=message))
+        request = build_request(settings, novel, mode, data, history)
         return {
             **estimate(request),
+            "mode": mode,
+            "rendered_context": request.body.messages[2].content,
             "messages": [m.model_dump(mode="json") for m in request.body.messages],
             "tools": tool_schemas(mode),
             "characters": {

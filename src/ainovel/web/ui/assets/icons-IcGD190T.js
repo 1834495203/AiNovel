@@ -1,4 +1,4 @@
-import{i as C,E as g}from"./vue-DdVXYugR.js";/**
+import{i as C,E as g}from"./vue-D5BJxACk.js";/**
  * @license @lucide/vue v1.53.0 - ISC
  *
  * This source code is licensed under the ISC license.

@@ -1,0 +1,112 @@
+{%- macro value(item) -%}
+{% if item is mapping -%}
+{% for key, child in item.items() %}{{ key }}为{{ value(child) }}{% if not loop.last %}，{% endif %}{% else %}无{% endfor %}
+{%- elif item is sequence and item is not string -%}
+{% for child in item %}{{ value(child) }}{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}
+{%- elif item is boolean -%}
+{{ '是' if item else '否' }}
+{%- elif item is none -%}
+未设置
+{%- else -%}
+{{ item }}
+{%- endif %}
+{%- endmacro -%}
+{%- macro fields(entity) %}
+{% for description in entity.description if description.value -%}
+- {{ description.name }}{% if description.visibility != 2 %}（{% if description.visibility == 0 %}仅 GM{% else %}角色私密{% endif %}）{% endif %}：{{ description.value | join('；') }}
+{% endfor -%}
+{% for attribute in entity.special_attributes -%}
+- {{ attribute.key }}{% if attribute.visibility != 2 %}（{% if attribute.visibility == 0 %}仅 GM{% else %}角色私密{% endif %}）{% endif %}：{{ value(attribute.current_value) }}
+{% if attribute.why %}。用途：{{ attribute.why }}{% endif -%}
+{% if attribute.how %}。叙事表现：{{ attribute.how }}{% endif -%}
+{% if attribute.when %}。修改条件：{{ attribute.when }}{% endif %}
+{% endfor -%}
+{% endmacro -%}
+{%- macro events(items, show_ids=false) -%}
+{% for event in items -%}
+- {% if show_ids %}#{{ event.position }} {% endif %}{{ event.label }}
+{%- if event.speaker %} · {{ event.speaker }}{% endif -%}
+{% if event.character and event.kind != 'role' %} · {{ event.character.name }}{% endif -%}
+{% if event.kind in ('gm_direction', 'self_edit') %}（接收者：{{ event.audience | map(attribute='name') | join('、') }}）{% endif %}：{{ event.text }}
+{% endfor -%}
+{% endmacro -%}
+# {{ data.novel.title }}
+
+{% if data.characters -%}
+## 当前角色名册
+角色的正式姓名和当前状态以这里为准。前情和幕后讨论保留历史原话。
+{% for character in data.characters -%}
+### {{ character.name }}（{{ character.type }}，角色 ID {{ character.id }}）
+{{ fields(character) }}
+{%- endfor %}
+{% endif -%}
+{% if data.novel.world -%}
+## 世界观
+{% for entity in data.novel.world -%}
+### {{ entity.name }}（{{ entity.type }}，ID {{ entity.id }}）
+{{ fields(entity) }}
+{%- endfor %}
+{% endif -%}
+{% if data.novel.creation -%}
+## 全书创作要求
+{% for entity in data.novel.creation -%}
+### {{ entity.name }}（{{ entity.type }}，ID {{ entity.id }}）
+{{ fields(entity) }}
+{%- endfor %}
+{% endif %}
+## 当前幕 · {{ data.current_scene.chapter_name }} / {{ data.current_scene.settings.name }}
+幕 ID {{ data.current_scene.settings.id }}，章 ID {{ data.current_scene.chapter_id }}
+在场 {{ data.current_scene.present | length }} 人{% if data.current_scene.present %}：{{ data.current_scene.present | map(attribute='name') | join('、') }}{% endif %}
+{{ fields(data.current_scene.settings) }}
+{% if data.current_scene.performance -%}
+### 本幕角色群聊和演绎事件
+{{ events(data.current_scene.performance, true) }}
+{% endif -%}
+{% if data.current_scene.prose -%}
+### 本幕已有正文
+{{ data.current_scene.prose }}
+{% endif -%}
+{% if data.current_scene.rewind.steps -%}
+### 本幕回撤目录
+当前位置第 {{ data.current_scene.rewind.position }} 步。开始记录前已有 {{ data.current_scene.rewind.start_event_count }} 条事件。
+{% for step in data.current_scene.rewind.steps -%}
+- step:{{ step.position }} · {{ step.summary }}
+{% endfor %}
+{% endif -%}
+{% if data.chapter_scenes | length > 1 -%}
+### 本章幕目录
+{% for scene in data.chapter_scenes -%}
+- {{ scene.name }}（幕 ID {{ scene.id }}）
+{% endfor %}
+{% endif -%}
+{% if data.chapters | selectattr('summary') | list or data.chapters | selectattr('scenes') | list -%}
+## 已发生的前情
+{% for chapter in data.chapters if chapter.summary or chapter.scenes -%}
+### {{ chapter.name }}
+{% if chapter.summary -%}
+章节摘要
+{{ chapter.summary }}
+{% else -%}
+{% for scene in chapter.scenes -%}
+#### {{ scene.settings.name }}
+{{ fields(scene.settings) }}
+{% if scene.performance -%}
+演绎记录
+{{ events(scene.performance) }}
+{% endif -%}
+{% if scene.prose -%}
+已有正文
+{{ scene.prose }}
+{% endif -%}
+{% endfor -%}
+{% endif %}
+{% endfor %}
+{% endif -%}
+{% if data.discussion -%}
+## 本幕较早的幕后讨论
+{% for message in data.discussion -%}
+### {{ message.speaker }}
+{{ message.text }}
+
+{% endfor -%}
+{% endif -%}

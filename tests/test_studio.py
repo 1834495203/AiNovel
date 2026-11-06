@@ -9,7 +9,15 @@ from pydantic import ValidationError
 from ainovel.controller.api import create_app
 from ainovel.core.config import Settings
 from ainovel.core.entities import Attribute, Description, Entity, Visibility, visible_entity
-from ainovel.core.studio import Patch, StudioAction, StudioChapter, StudioNovel, StudioScene
+from ainovel.core.gm_context import gm_context
+from ainovel.core.studio import (
+    ConversationMessage,
+    Patch,
+    StudioAction,
+    StudioChapter,
+    StudioNovel,
+    StudioScene,
+)
 from ainovel.core.studio_state import (
     apply_patch,
     edit_self,
@@ -22,7 +30,7 @@ from ainovel.core.studio_state import (
     role_states,
 )
 from ainovel.core.studio_tools import Edit, tools_for
-from ainovel.service.studio import StudioRunner, build_request, edit_fields, estimate, gm_context
+from ainovel.service.studio import StudioRunner, build_request, edit_fields, estimate
 
 
 def test_creation_request_has_only_creation_tool_descriptions_and_parameters():
@@ -192,6 +200,63 @@ def test_self_patch_preserves_hidden_fields_and_cannot_promote_to_system():
     assert b.description[0].value == ["乙的秘密"]
 
 
+async def test_named_field_edits_and_scene_local_character_names():
+    novel, scene, character, _ = fixture()
+    change_mood = False
+
+    async def save(_):
+        pass
+
+    async def actor(mode, data, history, request):
+        assert data["self"]["name"] == "清妍"
+        if change_mood and not history:
+            return StudioAction(
+                name="edit_self",
+                arguments={"operations": [{"op": "set_field", "field": "情绪", "value": "安心"}]},
+            )
+        return StudioAction(name="reply", text="我在。")
+
+    runner = StudioRunner(novel, SimpleNamespace(save=save), Settings(_env_file=None), actor=actor)
+
+    async def gm(name, **arguments):
+        return await runner.execute("gm", scene, StudioAction(name=name, arguments=arguments))
+
+    await gm(
+        "edit_fields",
+        scope="characters",
+        target="甲",
+        operations=[
+            {"op": "replace", "path": "/name", "value": "清妍"},
+            {"op": "remove_field", "field": "公开经历"},
+            {"op": "set_field", "field": "情绪", "value": "警惕"},
+        ],
+    )
+    await gm("enter_character", character="清妍")
+    result = await gm("schedule_characters", characters=["清妍"])
+    assert result.data["replies"] == [{"character": "清妍", "reply": "我在。"}]
+    assert scene.settings_patches[character.id][-1].path == "/special_attributes/0/current_value"
+    assert role_states(novel, scene)[character.id].special_attributes[0].current_value == "警惕"
+
+    edits = tools_for("role")["edit_self"]
+    with pytest.raises(ValueError, match="找不到可编辑字段"):
+        edit_self(
+            novel,
+            scene,
+            character.id,
+            edits(
+                operations=[
+                    {"op": "set_field", "field": "情绪", "value": "紧张"},
+                    {"op": "remove_field", "field": "系统"},
+                ]
+            ).operations,
+        )
+    assert role_states(novel, scene)[character.id].special_attributes[0].current_value == "警惕"
+    change_mood = True
+    await gm("schedule_characters", characters=["清妍"])
+    assert role_states(novel, scene)[character.id].special_attributes[0].current_value == "安心"
+    await gm("remove_character", character="清妍")
+
+
 def test_patch_atomicity_and_pointer_escaping():
     doc = {"a/b": {"~key": [1, 2]}}
     assert apply_patch(doc, [Patch(op="add", path="/a~1b/~0key/1", value=3)]) == {"a/b": {"~key": [1, 3, 2]}}
@@ -325,6 +390,131 @@ async def test_estimate_does_not_save_edits_and_invalid_jinja_is_readable(client
     assert invalid.status_code == 400 and "Jinja" in invalid.json()["detail"]
 
 
+async def test_gm_template_preview_and_real_call_share_rendering(client, monkeypatch):
+    from ainovel.service import studio
+
+    n = (await client.post("/api/studio/novels", json={})).json()
+    path = f"/api/studio/novels/{n['id']}"
+
+    async def post(endpoint, **payload):
+        current = (await client.get(path)).json()
+        response = await client.post(path + endpoint, json={"version": current["version"], **payload})
+        assert response.status_code == 200, response.text
+        return (await client.get(path)).json()
+
+    await post("/message", message="灯塔故事")
+    await post("/control", action="confirm_creation")
+    current = await post("/control", action="new_scene", name="海边初遇")
+    scene_id = current["scenes"][0]["entity"]["id"]
+    await post("/message", scene_id=scene_id, message="讨论旧方案")
+    draft = "这次改用新方案"
+    preview = (await client.get(path + "/preview", params={"scene_id": scene_id, "message": draft})).json()
+    assert "## 当前幕" in preview["rendered_context"] and "讨论旧方案" in preview["rendered_context"]
+    assert draft not in preview["rendered_context"] and preview["messages"][-1]["content"] == draft
+
+    source = "{{ data.current_scene.settings.name }} / {{ data.discussion[0].text }}"
+    payload = {
+        "compression": current["compression"],
+        "prompts": {},
+        "context_source": "{{ data.title }}",
+        "gm_context_source": source,
+    }
+    estimate = await client.post(path + "/estimate", json={**payload, "scene_id": scene_id, "message": draft})
+    assert estimate.status_code == 200 and estimate.json()["rendered_context"] == "海边初遇 / 讨论旧方案"
+    assert (await client.get(path)).json()["gm_context_source"] is None
+    saved = await post("/settings", **payload)
+    assert saved["gm_context_source"] == source
+
+    seen = []
+    build = studio.build_request
+
+    def record(*args, **kwargs):
+        request = build(*args, **kwargs)
+        seen.append([message.model_dump(mode="json") for message in request.body.messages])
+        return request
+
+    monkeypatch.setattr(studio, "build_request", record)
+    await post("/message", scene_id=scene_id, message=draft)
+    assert seen[0] == estimate.json()["messages"]
+
+
+def test_gm_legacy_layout_preserves_old_data_paths_and_native_history():
+    from ainovel.service.studio import gm_turn_messages
+
+    novel, scene, _, _ = fixture()
+    scene.messages = [ConversationMessage(role="user", content="早先的讨论")]
+    discussion, history = gm_turn_messages(scene.messages, "本轮要求")
+    novel.context_source = "{{ data.title }} / {{ data.current_scene.scene.name }}"
+    novel.prompts = {"gm": "{{ data.present_count }} 人"}
+    request = build_request(
+        Settings(_env_file=None), novel, "gm", gm_context(novel, scene, discussion), history
+    )
+    assert [message.content for message in request.body.messages[2:]] == [
+        f"{novel.title} / {scene.entity.name}",
+        "早先的讨论",
+        "本轮要求",
+    ]
+    assert request.body.messages[0].content == "0 人"
+
+
+async def test_gm_template_library_keeps_selection_and_preview_separate(client):
+    novel = (await client.post("/api/studio/novels", json={})).json()
+    path = f"/api/studio/novels/{novel['id']}"
+    source = "当前幕 {{ data.current_scene.settings.name }}"
+
+    async def update(endpoint, **data):
+        nonlocal novel
+        response = await client.post(path + endpoint, json={"version": novel["version"], **data})
+        assert response.status_code == 200, response.text
+        novel = (await client.get(path)).json()
+
+    response = await client.post(path + "/gm-template-preview", json={"source": source})
+    assert response.json()["rendered_context"] == "当前幕 示例幕"
+    assert response.json()["sample"] is True
+    assert (await client.get(path)).json() == novel
+
+    await update("/gm-templates", name="短版", source=source)
+    template_id = novel["gm_templates"][0]["id"]
+    assert novel["active_gm_template_id"] is None
+    await update("/gm-template-selection", id=template_id)
+    await update("/message", message="一部灯塔小说")
+    await update("/control", action="confirm_creation")
+    await update("/control", action="new_scene", name="初遇")
+    scene_id = novel["scenes"][0]["entity"]["id"]
+
+    async def rendered():
+        return (await client.get(path + "/preview", params={"scene_id": scene_id})).json()["rendered_context"]
+
+    assert await rendered() == "当前幕 初遇"
+    await update(
+        "/settings",
+        compression=novel["compression"],
+        prompts={},
+        context_source=novel["context_source"],
+        gm_context_source=None,
+    )
+    assert novel["active_gm_template_id"] == template_id
+    await update("/gm-templates", id=template_id, name="新版", source="新版 " + source)
+    assert await rendered() == "新版 当前幕 初遇"
+    response = await client.post(path + "/gm-template-preview", json={"source": "临时", "scene_id": scene_id})
+    assert response.json()["rendered_context"] == "临时"
+    assert await rendered() == "新版 当前幕 初遇"
+    await update("/gm-template-selection", id="default")
+    assert "## 当前幕" in await rendered()
+
+
+def test_gm_default_template_separates_current_names_from_historical_quotes():
+    novel, scene, character, _ = fixture()
+    character.name = "清妍"
+    emit(scene, "enter", "走进房间", character.id)
+    emit(scene, "role", "以前有人叫我清晏。", character.id)
+    request = build_request(Settings(_env_file=None), novel, "gm", gm_context(novel, scene))
+    rendered = request.body.messages[2].content
+    assert rendered.index("## 当前角色名册") < rendered.index("## 当前幕")
+    assert "### 清妍" in rendered and "角色发言或行动 · 清妍：以前有人叫我清晏。" in rendered
+    assert request.body.tools
+
+
 async def test_api_rejects_user_messages_and_edits_during_gm_execution(client, monkeypatch):
     import asyncio
 
@@ -368,10 +558,16 @@ def test_chapter_compression_falls_back_without_truncating():
     n.scenes.append(current)
     n.compression.full_chapters = 0
     n.compression.scene_chapters = 0
-    assert gm_context(n, current)["chapters"][0]["content"][0]["events"][0]["text"] == "很长的消息" * 2000
+    assert gm_context(n, current).chapters[0].scenes[0].performance[0].text == "很长的消息" * 2000
     n.chapters[0].summary = "灯塔事件"
     n.chapters[0].summary_stale = False
-    assert gm_context(n, current)["chapters"][0]["content"] == "灯塔事件"
+    chapter = gm_context(n, current).chapters[0]
+    assert chapter.summary == "灯塔事件" and chapter.scenes == []
+    n.compression.scene_chapters = 2
+    s.text = "已经写好的正文"
+    chapter = gm_context(n, current).chapters[0]
+    assert chapter.level == "scenes" and chapter.summary is None and chapter.scenes[0].prose is None
+    assert chapter.scenes[0].performance[0].text == "很长的消息" * 2000
 
 
 @pytest.fixture
