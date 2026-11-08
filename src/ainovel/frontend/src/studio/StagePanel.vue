@@ -24,6 +24,6 @@ onMounted(()=>nextTick(()=>{if(scroll.value)scroll.value.scrollTop=scroll.value.
 
 <style scoped>
 .stage-event.gm_direction p,.stage-event.self_edit p{white-space:pre-wrap;overflow-wrap:anywhere}
-.stage-event.gm_direction header small{color:#65519a}
-.stage-event.self_edit header small{color:#496957}
+.stage-event.gm_direction header small{color:var(--theme-accent-text,#65519a)}
+.stage-event.self_edit header small{color:var(--theme-green-text,#496957)}
 </style>

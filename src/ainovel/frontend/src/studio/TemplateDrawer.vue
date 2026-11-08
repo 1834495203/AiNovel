@@ -10,11 +10,11 @@ const emit=defineEmits<{'update:show':[value:boolean];apply:[id:string]}>();
 const toast=useMessage(),dialog=useDialog();
 const templates=ref<FieldTemplate[]>([]),cache=ref<Record<string,FieldTemplate>>({}),selected=ref(''),scope=ref<Scope>('world');
 const loading=ref(false),working=ref(false),invalid=ref(false),error=ref(''),exporting=ref(false),exportName=ref('');
-const names:Record<Scope,string>={world:'世界观',characters:'角色',creation:'创作',chapters:'章节',scenes:'幕'};
+const names:Record<Scope,string>={world:'世界观',characters:'角色',creation:'创作',chapters:'章设定'};
 const current=computed(()=>cache.value[selected.value]);
 const options=computed(()=>Object.entries(cache.value).map(([key,t])=>({value:key,label:t.name+(t.id?'':' · 未保存')})));
 const dirty=computed(()=>{const t=current.value;return !!t&&(!t.id||JSON.stringify(t)!==JSON.stringify(templates.value.find(v=>v.id===t.id)))});
-function emptyFields():TemplateFields{const entity=(name:string,type:string)=>({name,type,description:[],special_attributes:[]});return {world:entity('世界观','world'),characters:entity('角色','human'),creation:entity('创作','creation'),chapters:entity('章节','chapter'),scenes:entity('幕','scene')}}
+function emptyFields():TemplateFields{const entity=(name:string,type:string)=>({name,type,description:[],special_attributes:[]});return {world:entity('世界观','world'),characters:entity('角色','human'),creation:entity('创作','creation'),chapters:entity('章节','chapter')}}
 function fresh(){const key=localId('new');cache.value[key]={id:'',version:0,name:'新字段模板',fields:emptyFields()};selected.value=key;scope.value='world'}
 async function load(){loading.value=true;error.value='';try{templates.value=await studio<FieldTemplate[]>('/templates');for(const t of templates.value)if(!cache.value[t.id])cache.value[t.id]=JSON.parse(JSON.stringify(t));if(!current.value){if(templates.value.length)selected.value=templates.value[0].id;else fresh()}}catch(e){error.value=String(e)}finally{loading.value=false}}
 async function save(){if(!current.value||working.value)return;working.value=true;error.value='';try{const {id,...data}=current.value;const value=await studio<FieldTemplate>('/templates',{...data,id:id||null});const old=selected.value;cache.value[value.id]=JSON.parse(JSON.stringify(value));selected.value=value.id;if(old!==value.id)delete cache.value[old];templates.value=await studio<FieldTemplate[]>('/templates');toast.success('模板已保存，已有小说不受影响')}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{working.value=false}}

@@ -1,0 +1,14 @@
+{%- if data.chapter is defined -%}
+{{ {
+  "chapter": data.chapter,
+  "scene": {"id": data.scene.id, "name": data.scene.name, "type": data.scene.type},
+  "events": data.events,
+  "characters": data.characters,
+  "text": data.text,
+  "previous_requirements": data.previous_requirements,
+  "writing_mode": data.writing_mode,
+  "requirements": data.requirements
+} | tojson }}
+{%- else -%}
+{{ data | tojson }}
+{%- endif -%}

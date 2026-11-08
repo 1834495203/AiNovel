@@ -30,7 +30,7 @@ from ainovel.core.studio_state import (
     role_states,
 )
 from ainovel.core.studio_tools import Edit, tools_for
-from ainovel.service.studio import StudioRunner, build_request, edit_fields, estimate
+from ainovel.service.studio import StudioRunner, build_request, edit_fields, estimate, writing_context
 
 
 def test_creation_request_has_only_creation_tool_descriptions_and_parameters():
@@ -457,7 +457,9 @@ def test_gm_legacy_layout_preserves_old_data_paths_and_native_history():
     assert request.body.messages[0].content == "0 人"
 
 
-async def test_gm_template_library_keeps_selection_and_preview_separate(client):
+async def test_gm_template_library_keeps_selection_and_preview_separate(client, monkeypatch):
+    from ainovel.service import studio
+
     novel = (await client.post("/api/studio/novels", json={})).json()
     path = f"/api/studio/novels/{novel['id']}"
     source = "当前幕 {{ data.current_scene.settings.name }}"
@@ -495,12 +497,103 @@ async def test_gm_template_library_keeps_selection_and_preview_separate(client):
     )
     assert novel["active_gm_template_id"] == template_id
     await update("/gm-templates", id=template_id, name="新版", source="新版 " + source)
-    assert await rendered() == "新版 当前幕 初遇"
+    assert await rendered() == "当前幕 初遇"
     response = await client.post(path + "/gm-template-preview", json={"source": "临时", "scene_id": scene_id})
     assert response.json()["rendered_context"] == "临时"
+    assert response.json()["active"]["rendered_context"] == "当前幕 初遇"
+    assert response.json()["context_tokens"] < response.json()["active"]["context_tokens"]
+
+    await update("/message", scene_id=scene_id, message="讨论本幕")
+    message_id = novel["turn_checkpoint"]["message_id"]
+    await update("/gm-template-selection", id=template_id)
     assert await rendered() == "新版 当前幕 初遇"
+    assert novel["turn_checkpoint"]["version"] == novel["version"]
+    seen = []
+
+    def record(*args, **kwargs):
+        request = build_request(*args, **kwargs)
+        seen.append(request.body.messages[2].content)
+        return request
+
+    monkeypatch.setattr(studio, "build_request", record)
+    await update("/turn", action="retry", scene_id=scene_id, message_id=message_id)
+    assert seen and all(context == "新版 当前幕 初遇" for context in seen)
+    assert len(novel["scenes"][0]["events"]) == 1
+
+    await update("/edit", scope="world", title="手动修改后的书名")
+    await update("/gm-templates", name="另存草稿", source=source)
+    assert novel["turn_checkpoint"]["version"] != novel["version"]
+    blocked = await client.post(path + "/turn", json={
+        "version": novel["version"], "action": "retry", "scene_id": scene_id,
+        "message_id": novel["turn_checkpoint"]["message_id"],
+    })
+    assert blocked.status_code == 400, blocked.text
+
     await update("/gm-template-selection", id="default")
     assert "## 当前幕" in await rendered()
+
+
+async def test_shared_gm_template_copy_keeps_its_variables(client):
+    novel = (await client.post("/api/studio/novels", json={})).json()
+    path = f"/api/studio/novels/{novel['id']}"
+    source = "{{ data.title }} / {{ data.current_scene.scene.name }}"
+    preview = await client.post(path + "/gm-template-preview", json={"source": source, "schema_version": "shared-v1"})
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["rendered_context"] == "未命名小说 / 示例幕"
+
+    saved = await client.post(path + "/gm-templates", json={
+        "version": novel["version"], "name": "共享模板副本", "source": source, "schema_version": "shared-v1",
+    })
+    assert saved.status_code == 200, saved.text
+    novel = saved.json()
+    template_id = novel["gm_templates"][0]["id"]
+    activated = await client.post(path + "/gm-template-selection", json={"version": novel["version"], "id": template_id})
+    assert activated.status_code == 200, activated.text
+    assert activated.json()["active_gm_template"]["schema_version"] == "shared-v1"
+
+    novel = activated.json()
+    saved = await client.post(path + "/gm-templates", json={
+        "version": novel["version"], "id": template_id, "name": "草稿", "source": "{{ missing_variable }}",
+    })
+    assert saved.status_code == 200, saved.text
+    blocked = await client.post(path + "/gm-template-selection", json={
+        "version": saved.json()["version"], "id": template_id,
+    })
+    assert blocked.status_code == 400, blocked.text
+    assert (await client.get(path)).json()["active_gm_template"]["source"] == source
+
+
+@pytest.mark.parametrize(("mode", "source", "rendered"), [
+    ("role", "{{ data.self.name }} / {{ data.direction }}", "示例角色 / 试用要求"),
+    ("writing", "{{ data.scene.name }} / {{ data.requirements }}", "示例幕 / 试用要求"),
+])
+async def test_context_templates_have_immutable_defaults_and_independent_copies(client, mode, source, rendered):
+    novel = (await client.post("/api/studio/novels", json={})).json()
+    path = f"/api/studio/novels/{novel['id']}"
+
+    async def post(endpoint, **data):
+        return await client.post(path + endpoint, json={"version": novel["version"], "mode": mode, **data})
+
+    blocked = await post("/context-templates", id="default", name="改内置", source=source)
+    assert blocked.status_code == 400, blocked.text
+    preview = await client.post(path + "/context-template-preview", json={
+        "mode": mode, "source": source, "message": "试用要求",
+    })
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["rendered_context"] == rendered and preview.json()["sample"]
+    saved = await post("/context-templates", name="自定义副本", source=source)
+    assert saved.status_code == 200, saved.text
+    novel = saved.json()
+    template = novel["context_template_sets"][mode]["templates"][0]
+    enabled = await post("/context-template-selection", id=template["id"], message="试用要求")
+    assert enabled.status_code == 200, enabled.text
+    novel = enabled.json()
+    assert novel["context_template_sets"][mode]["active"] == template
+    assert novel["active_gm_template_id"] is None
+    restored = await post("/context-template-selection", id="default")
+    assert restored.status_code == 200, restored.text
+    state = restored.json()["context_template_sets"][mode]
+    assert state["active_id"] == "default" and state["active"] is None and state["templates"] == [template]
 
 
 def test_gm_default_template_separates_current_names_from_historical_quotes():
@@ -513,6 +606,82 @@ def test_gm_default_template_separates_current_names_from_historical_quotes():
     assert rendered.index("## 当前角色名册") < rendered.index("## 当前幕")
     assert "### 清妍" in rendered and "角色发言或行动 · 清妍：以前有人叫我清晏。" in rendered
     assert request.body.tools
+
+
+def test_default_gm_and_writing_use_the_selected_chapter_and_keep_legacy_scene_fields_available():
+    novel, scene, _, _ = fixture()
+    novel.chapters[0].entity.description = [Description(name="章目标", value=["找到密信"])]
+    novel.chapters.append(StudioChapter(entity=Entity(name="下一章")))
+    scene.entity.description = [Description(name="旧幕字段", value=["旧幕里保存的资料"])]
+    settings = Settings(_env_file=None)
+
+    gm_data = gm_context(novel, scene)
+    writing_data = writing_context(novel, scene)
+    gm_request = build_request(settings, novel, "gm", gm_data)
+    writing_request = build_request(settings, novel, "writing", writing_data)
+    for request in (gm_request, writing_request):
+        rendered = request.body.messages[2].content
+        assert "找到密信" in rendered
+        assert "下一章" not in rendered and "旧幕里保存的资料" not in rendered
+
+    novel.context_source = "{{ data.scene.description[0].value[0] }}"
+    assert build_request(settings, novel, "writing", writing_data).body.messages[2].content == "旧幕里保存的资料"
+
+
+async def test_studio_custom_documentation_is_previewed_and_sent_with_native_tools(client, monkeypatch):
+    from ainovel.service import studio
+
+    novel = (await client.post("/api/studio/novels", json={})).json()
+    path = f"/api/studio/novels/{novel['id']}"
+    docs = {"gm": {
+        "tool_descriptions": {"say_to_group": "只广播角色当前感知到的客观结果。"},
+        "variable_descriptions": {"data.novel.title": "作品正式名称，旧称可能出现在历史里。"},
+    }}
+    source = "{{ data.novel.title }}"
+    draft = await client.post(path + "/context-template-preview", json={"source": source, "documentation": docs})
+    assert draft.status_code == 200, draft.text
+    preview = draft.json()
+    assert preview["documentation"]["tool_descriptions"]["say_to_group"] == docs["gm"]["tool_descriptions"]["say_to_group"]
+    assert preview["documentation"]["variable_schema"]["data.novel.title"] == {
+        "type": "string", "description": docs["gm"]["variable_descriptions"]["data.novel.title"],
+    }
+    assert "data.novel.title" not in preview["active"]["documentation"]["variable_schema"]
+    assert (await client.get(path)).json()["documentation"] == {}
+
+    settings = {key: novel[key] for key in ("version", "compression", "prompts", "context_source")}
+    rejected = await client.post(path + "/settings", json={**settings, "documentation": {
+        "role": {"tool_descriptions": {"say_to_group": "不可借此增加角色权限"}},
+    }})
+    assert rejected.status_code == 400, rejected.text
+    saved = await client.post(path + "/settings", json={**settings, "documentation": docs})
+    assert saved.status_code == 200, saved.text
+    catalog = (await client.get("/api/studio/contracts")).json()
+    default_tool = next(tool for tool in catalog["tools"]["gm"] if tool["name"] == "say_to_group")
+    seen = []
+
+    def record(*args, **kwargs):
+        request = build_request(*args, **kwargs)
+        if request.metadata.node == "gm":
+            seen.append(request.body)
+        return request
+
+    monkeypatch.setattr(studio, "build_request", record)
+
+    async def update(endpoint, **data):
+        current = (await client.get(path)).json()
+        response = await client.post(path + endpoint, json={"version": current["version"], **data})
+        assert response.status_code == 200, response.text
+        return (await client.get(path)).json()
+
+    await update("/message", message="写灯塔故事")
+    await update("/control", action="confirm_creation")
+    current = await update("/control", action="new_scene")
+    await update("/message", scene_id=current["scenes"][0]["entity"]["id"], message="看看海面")
+    assert seen
+    assert json.loads(seen[0].messages[1].content) == preview["documentation"]
+    native = next(tool.function.model_dump(mode="json") for tool in seen[0].tools if tool.function.name == "say_to_group")
+    assert native["description"] == docs["gm"]["tool_descriptions"]["say_to_group"]
+    assert native["parameters"] == default_tool["parameters"]
 
 
 async def test_api_rejects_user_messages_and_edits_during_gm_execution(client, monkeypatch):
@@ -626,6 +795,8 @@ async def test_api_gm_answers_user_question_without_tool_calls_and_keeps_it_afte
 
 
 async def test_api_progressive_creation_performance_prose_branch_and_purge(client, monkeypatch):
+    from ainovel.service import studio
+
     n = (await client.post("/api/studio/novels", json={})).json()
     key = n["id"]
 
@@ -639,6 +810,31 @@ async def test_api_progressive_creation_performance_prose_branch_and_purge(clien
         )
         assert response.status_code == 200, response.text
         return await get()
+
+    async def enable_template(mode, source, **preview_input):
+        path = f"/api/studio/novels/{key}"
+        current = await get()
+        saved = await client.post(path + "/context-templates", json={
+            "version": current["version"], "mode": mode, "name": "测试副本", "source": source,
+        })
+        assert saved.status_code == 200, saved.text
+        current = saved.json()
+        item = current["context_template_sets"][mode]["templates"][0]
+        activated = await client.post(path + "/context-template-selection", json={
+            "version": current["version"], "mode": mode, "id": item["id"], **preview_input,
+        })
+        assert activated.status_code == 200, activated.text
+        return activated.json()
+
+    rendered = {"role": [], "writing": []}
+
+    def record(settings, novel, mode, data, *args, **kwargs):
+        request = build_request(settings, novel, mode, data, *args, **kwargs)
+        if mode in rendered:
+            rendered[mode].append(request.body.messages[2].content)
+        return request
+
+    monkeypatch.setattr(studio, "build_request", record)
 
     response = await client.post(
         f"/api/studio/novels/{key}/message", json={"version": n["version"], "message": "海上的灯塔都市"}
@@ -662,6 +858,7 @@ async def test_api_progressive_creation_performance_prose_branch_and_purge(clien
     n = await control("new_scene")
     scene_id = n["scenes"][0]["entity"]["id"]
     n = await control("enter", scene_id=scene_id, name="甲")
+    n = await enable_template("role", "角色 {{ data.self.name }} / {{ data.self.description[0].value[0] }}", scene_id=scene_id)
     response = await client.post(
         f"/api/studio/novels/{key}/message",
         json={"version": n["version"], "scene_id": scene_id, "message": "让甲自己决定是否进入灯塔"},
@@ -669,7 +866,9 @@ async def test_api_progressive_creation_performance_prose_branch_and_purge(clien
     assert response.status_code == 200, response.text
     n = await get()
     assert any(e["kind"] == "role" for e in n["scenes"][0]["events"])
+    assert rendered["role"] == ["角色 甲 / 隐藏动机"]
     n = await control("confirm_scene", scene_id=scene_id)
+    await enable_template("writing", "{{ data.writing_mode }} / {{ data.requirements }}", scene_id=scene_id)
     original_mock = StudioRunner.mock
     writing_requests = []
     replies = iter(["第一版整幕正文", " ", "第二版整幕正文"])
@@ -701,6 +900,7 @@ async def test_api_progressive_creation_performance_prose_branch_and_purge(clien
         ("rewrite", "第一版整幕正文", "使用第一人称", "缩短对话"),
     ]
     assert all(data["events"] == writing_requests[0]["events"] for data in writing_requests)
+    assert rendered["writing"] == ["generate / 使用第一人称", "rewrite / 补充环境细节", "rewrite / 缩短对话"]
     n = await control("finish_chapter", scene_id=scene_id)
     assert n["chapters"][0]["summary"] and not n["chapters"][0]["summary_stale"]
     n = await control("new_scene", new_chapter=True)
@@ -740,20 +940,13 @@ async def test_templates_initialize_independent_novel_fields_and_export_as_new(c
     fields["world"]["description"] = [{"name": "世界规则", "value": ["模板初始世界"], "visibility": 2}]
     fields["characters"]["description"] = [{"name": "动机", "value": ["模板动机"], "visibility": 1}]
     fields["chapters"]["description"] = [{"name": "章节目标", "value": [], "visibility": 2}]
-    fields["scenes"]["special_attributes"] = [
-        {
-            "key": "气氛",
-            "value_type": "str",
-            "current_value": "安静",
-            "why": "场景气氛",
-            "how": "轻声交谈",
-            "when": "事件发生",
-            "visibility": 2,
-        }
-    ]
+    fields["scenes"] = {
+        "name": "旧幕模板", "type": "scene", "description": [{"name": "气氛", "value": ["安静"]}],
+    }
     response = await client.post("/api/studio/templates", json={"name": "人物驱动", "fields": fields})
     assert response.status_code == 200, response.text
     template = response.json()
+    assert "scenes" not in template["fields"]
     novel = (await client.post("/api/studio/novels", json={})).json()
     path = "/api/studio/novels/" + novel["id"]
     applied = await client.post(
@@ -824,7 +1017,14 @@ async def test_templates_initialize_independent_novel_fields_and_export_as_new(c
     assert response.status_code == 200, response.text
     novel = response.json()
     assert novel["chapters"][0]["entity"]["description"][0]["name"] == "章节目标"
-    assert novel["scenes"][0]["entity"]["special_attributes"][0]["current_value"] == "安静"
+    assert novel["scenes"][0]["entity"]["description"] == []
+    scene_id = novel["scenes"][0]["entity"]["id"]
+    renamed = await client.post(path + "/control", json={
+        "version": novel["version"], "action": "rename_scene", "scene_id": scene_id, "name": "宫门盘查",
+    })
+    assert renamed.status_code == 200, renamed.text
+    novel = renamed.json()
+    assert novel["scenes"][0]["entity"]["name"] == "宫门盘查"
     locked = await client.post(
         path + "/template", json={"version": novel["version"], "template_id": template["id"]}
     )

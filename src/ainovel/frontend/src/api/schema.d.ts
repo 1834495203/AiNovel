@@ -228,6 +228,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/studio/novels/{key}/context-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Context Template */
+        post: operations["save_context_template_api_studio_novels__key__context_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/studio/novels/{key}/gm-templates": {
         parameters: {
             query?: never;
@@ -237,8 +254,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save Gm Template */
-        post: operations["save_gm_template_api_studio_novels__key__gm_templates_post"];
+        /** Save Context Template */
+        post: operations["save_context_template_api_studio_novels__key__gm_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/context-template-selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable Context Template */
+        post: operations["enable_context_template_api_studio_novels__key__context_template_selection_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -254,8 +288,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Select Gm Template */
-        post: operations["select_gm_template_api_studio_novels__key__gm_template_selection_post"];
+        /** Enable Context Template */
+        post: operations["enable_context_template_api_studio_novels__key__gm_template_selection_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/novels/{key}/context-template-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Context Template */
+        post: operations["preview_context_template_api_studio_novels__key__context_template_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -271,8 +322,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Preview Gm Template */
-        post: operations["preview_gm_template_api_studio_novels__key__gm_template_preview_post"];
+        /** Preview Context Template */
+        post: operations["preview_context_template_api_studio_novels__key__gm_template_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1457,7 +1508,7 @@ export interface components {
             full_chapters: number;
             /**
              * Scene Chapters
-             * @description 再往前多少章发送幕设定和演绎，其余发送章节摘要。
+             * @description 再往前多少章发送幕目录和演绎，其余发送章节摘要。
              * @default 3
              */
             scene_chapters: number;
@@ -1503,6 +1554,155 @@ export interface components {
              */
             children?: components["schemas"]["ContextField"][];
         };
+        /** ContextTemplate */
+        ContextTemplate: {
+            /** Id */
+            id?: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+            /**
+             * Schema Version
+             * @default gm-v1
+             * @enum {string}
+             */
+            schema_version: "gm-v1" | "shared-v1" | "role-v1" | "writing-v1";
+        };
+        /** ContextTemplatePreview */
+        ContextTemplatePreview: {
+            /**
+             * Mode
+             * @default gm
+             * @enum {string}
+             */
+            mode: "gm" | "role" | "writing";
+            /**
+             * Scene Id
+             * @default
+             */
+            scene_id: string;
+            /**
+             * Branch Id
+             * @default
+             */
+            branch_id: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Character Id
+             * @default
+             */
+            character_id: string;
+            /** Source */
+            source: string | null;
+            /** Schema Version */
+            schema_version?: ("gm-v1" | "shared-v1" | "role-v1" | "writing-v1") | null;
+            /** Documentation */
+            documentation?: {
+                [key: string]: components["schemas"]["StudioDocumentation"];
+            } | null;
+        };
+        /** ContextTemplatePreviewResult */
+        ContextTemplatePreviewResult: {
+            /** Rendered Context */
+            rendered_context: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Context Tokens */
+            context_tokens: number;
+            /** Documentation */
+            documentation: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Sample */
+            sample: boolean;
+            active?: components["schemas"]["ContextTemplateRender"] | null;
+            /**
+             * Active Error
+             * @default
+             */
+            active_error: string;
+        };
+        /** ContextTemplateRender */
+        ContextTemplateRender: {
+            /** Rendered Context */
+            rendered_context: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Context Tokens */
+            context_tokens: number;
+            /** Documentation */
+            documentation: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /** ContextTemplateSave */
+        ContextTemplateSave: {
+            /** Version */
+            version: number;
+            /**
+             * Mode
+             * @default gm
+             * @enum {string}
+             */
+            mode: "gm" | "role" | "writing";
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+            /** Schema Version */
+            schema_version?: ("gm-v1" | "shared-v1" | "role-v1" | "writing-v1") | null;
+        };
+        /** ContextTemplateSelection */
+        ContextTemplateSelection: {
+            /**
+             * Mode
+             * @default gm
+             * @enum {string}
+             */
+            mode: "gm" | "role" | "writing";
+            /**
+             * Scene Id
+             * @default
+             */
+            scene_id: string;
+            /**
+             * Branch Id
+             * @default
+             */
+            branch_id: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Character Id
+             * @default
+             */
+            character_id: string;
+            /** Version */
+            version: number;
+            /** Id */
+            id: string | null;
+        };
+        /** ContextTemplateSet */
+        ContextTemplateSet: {
+            /** Templates */
+            templates?: components["schemas"]["ContextTemplate"][];
+            /** Active Id */
+            active_id?: string | null;
+            active?: components["schemas"]["ContextTemplate"] | null;
+        };
         /** ControlRequest */
         ControlRequest: {
             /** Version */
@@ -1511,7 +1711,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "confirm_creation" | "new_scene" | "confirm_scene" | "reset" | "branch" | "write" | "undo_prose" | "finish_chapter" | "delete" | "restore" | "enter" | "leave";
+            action: "confirm_creation" | "new_scene" | "rename_scene" | "confirm_scene" | "reset" | "branch" | "write" | "undo_prose" | "finish_chapter" | "delete" | "restore" | "enter" | "leave";
             /**
              * Scene Id
              * @default
@@ -1955,7 +2155,7 @@ export interface components {
              * Scope
              * @enum {string}
              */
-            scope: "world" | "characters" | "creation" | "chapters" | "scenes";
+            scope: "world" | "characters" | "creation" | "chapters";
             /**
              * Target
              * @default
@@ -2103,6 +2303,10 @@ export interface components {
             context_source: string;
             /** Gm Context Source */
             gm_context_source?: string | null;
+            /** Documentation */
+            documentation?: {
+                [key: string]: components["schemas"]["StudioDocumentation"];
+            } | null;
         };
         /** Event */
         Event: {
@@ -2575,56 +2779,6 @@ export interface components {
             instruction: string;
             /** Prompt Templates */
             prompt_templates?: components["schemas"]["PromptTemplateSelection"][];
-        };
-        /** GmTemplate */
-        GmTemplate: {
-            /** Id */
-            id?: string;
-            /** Name */
-            name: string;
-            /** Source */
-            source: string;
-        };
-        /** GmTemplatePreview */
-        GmTemplatePreview: {
-            /** Source */
-            source: string | null;
-            /**
-             * Scene Id
-             * @default
-             */
-            scene_id: string;
-            /**
-             * Branch Id
-             * @default
-             */
-            branch_id: string;
-            /**
-             * Message
-             * @default
-             */
-            message: string;
-        };
-        /** GmTemplateSave */
-        GmTemplateSave: {
-            /** Version */
-            version: number;
-            /**
-             * Id
-             * @default
-             */
-            id: string;
-            /** Name */
-            name: string;
-            /** Source */
-            source: string;
-        };
-        /** GmTemplateSelection */
-        GmTemplateSelection: {
-            /** Version */
-            version: number;
-            /** Id */
-            id: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4107,6 +4261,10 @@ export interface components {
             context_source: string;
             /** Gm Context Source */
             gm_context_source?: string | null;
+            /** Documentation */
+            documentation?: {
+                [key: string]: components["schemas"]["StudioDocumentation"];
+            } | null;
         };
         /** SetupDraft */
         "SetupDraft-Input": {
@@ -4449,6 +4607,23 @@ export interface components {
              */
             completed: boolean;
         };
+        /** StudioDocumentation */
+        StudioDocumentation: {
+            /** Tool Descriptions */
+            tool_descriptions?: {
+                [key: string]: string;
+            };
+            /** Variable Descriptions */
+            variable_descriptions?: {
+                [key: string]: string;
+            };
+            /**
+             * Variable Detail
+             * @default compact
+             * @enum {string}
+             */
+            variable_detail: "compact" | "full" | "off";
+        };
         /** StudioFieldTemplate */
         StudioFieldTemplate: {
             /** Id */
@@ -4519,9 +4694,18 @@ export interface components {
             /** Gm Context Source */
             gm_context_source?: string | null;
             /** Gm Templates */
-            gm_templates?: components["schemas"]["GmTemplate"][];
+            gm_templates?: components["schemas"]["ContextTemplate"][];
             /** Active Gm Template Id */
             active_gm_template_id?: string | null;
+            active_gm_template?: components["schemas"]["ContextTemplate"] | null;
+            /** Context Template Sets */
+            context_template_sets?: {
+                [key: string]: components["schemas"]["ContextTemplateSet"];
+            };
+            /** Documentation */
+            documentation?: {
+                [key: string]: components["schemas"]["StudioDocumentation"];
+            };
             /**
              * Busy
              * @default false
@@ -4607,7 +4791,6 @@ export interface components {
             characters?: components["schemas"]["EntityInput"];
             creation?: components["schemas"]["EntityInput"];
             chapters?: components["schemas"]["EntityInput"];
-            scenes?: components["schemas"]["EntityInput"];
         };
         /** ToolContract */
         ToolContract: {
@@ -5633,7 +5816,7 @@ export interface operations {
             };
         };
     };
-    save_gm_template_api_studio_novels__key__gm_templates_post: {
+    save_context_template_api_studio_novels__key__context_templates_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5644,7 +5827,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GmTemplateSave"];
+                "application/json": components["schemas"]["ContextTemplateSave"];
             };
         };
         responses: {
@@ -5668,7 +5851,7 @@ export interface operations {
             };
         };
     };
-    select_gm_template_api_studio_novels__key__gm_template_selection_post: {
+    save_context_template_api_studio_novels__key__gm_templates_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5679,7 +5862,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GmTemplateSelection"];
+                "application/json": components["schemas"]["ContextTemplateSave"];
             };
         };
         responses: {
@@ -5703,7 +5886,7 @@ export interface operations {
             };
         };
     };
-    preview_gm_template_api_studio_novels__key__gm_template_preview_post: {
+    enable_context_template_api_studio_novels__key__context_template_selection_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5714,7 +5897,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GmTemplatePreview"];
+                "application/json": components["schemas"]["ContextTemplateSelection"];
             };
         };
         responses: {
@@ -5724,7 +5907,112 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_context_template_api_studio_novels__key__gm_template_selection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextTemplateSelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioNovel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_context_template_api_studio_novels__key__context_template_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextTemplatePreview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextTemplatePreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_context_template_api_studio_novels__key__gm_template_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextTemplatePreview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextTemplatePreviewResult"];
                 };
             };
             /** @description Validation Error */

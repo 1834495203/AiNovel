@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useMessage } from 'naive-ui';
 import { localId } from './localId';
-import { studio, type Card, type Entity, type GmContextSchema, type Message, type Novel, type Preview, type Scene } from '../studio-api';
+import { studio, type Card, type Entity, type StudioContracts, type StudioSettings, type Message, type Novel, type Preview, type Scene } from '../studio-api';
 
 type TurnAction='retry'|'edit'|'withdraw';
 
@@ -13,7 +13,7 @@ export function useWorkspace() {
   const loading = ref(false), action = ref(''), error = ref(''), failedSend = ref('');
   const optimistic = ref<{id:string;content:string;before:number;writing:boolean}|null>(null);
   const roundStart = ref(0), pollFailed = ref(false);
-  const contracts = ref<{prompts:Record<string,string>;tools:Record<string,unknown[]>;gm_context_source:string;gm_context_schema:GmContextSchema}>();
+  const contracts = ref<StudioContracts>();
   const scenes = computed(()=>archive.value ? novel.value?.branches.find(b=>b.id===archive.value)?.scenes??[] : novel.value?.scenes??[]);
   const scene = computed(()=>scenes.value.find(s=>s.entity.id===selected.value)??scenes.value.at(-1));
   const messages = computed(()=>novel.value?.created ? scene.value?.messages??[] : novel.value?.creation_messages??[]);
@@ -152,7 +152,12 @@ export function useWorkspace() {
   }
   function changeWritingTurn(kind:TurnAction,content?:string){return changeTurn(kind,content,true)}
   async function applyTemplate(id:string){return run('template',async()=>{if(!novel.value)throw new Error('请选择作品');const value=await studio<Novel>(`/novels/${novel.value.id}/template`,{version:novel.value.version,template_id:id});setNovel(value);await inspect();return value},'字段已初始化，本书会独立保存')}
-  async function saveSettings(payload:Record<string,unknown>){return run('settings',async()=>{if(!novel.value)throw new Error('请选择作品');const value=await studio<Novel>(`/novels/${novel.value.id}/settings`,{version:novel.value.version,...payload});setNovel(value);await inspect();return value},'设置已保存')}
+  async function saveSettings(payload:StudioSettings){return run('settings',async()=>{
+    const current=novel.value;if(!current)throw new Error('请选择作品');
+    const value=await studio<Novel>(`/novels/${current.id}/settings`,{version:current.version,...payload});
+    if(novel.value?.id===current.id){setNovel(value);await inspect().catch(()=>{})}
+    return value;
+  },'设置已保存')}
   async function purge(){return run('purge',async()=>{if(!novel.value)return;await studio(`/novels/${novel.value.id}?version=${novel.value.version}`,undefined,'DELETE');home();await list()},'作品已永久删除')}
   watch(draft,()=>{clearTimeout(estimateTimer);estimateTimer=window.setTimeout(()=>{if(!novel.value?.busy)inspect().catch(()=>{})},450)});
   async function tick(){if(disposed)return;try{if(novel.value?.busy&&!action.value&&!polling){polling=true;await refresh()}}catch{pollFailed.value=true}finally{polling=false;if(!disposed)timer=window.setTimeout(tick,700)}}

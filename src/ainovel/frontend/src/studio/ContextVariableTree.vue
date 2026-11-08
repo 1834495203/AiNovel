@@ -19,7 +19,7 @@ defineProps<{nodes:VariableNode[]}>();
 </template>
 
 <style scoped>
-.variable-tree{list-style:none;padding:0 0 0 13px;margin:4px 0;border-left:1px solid #e5eaf3}
+.variable-tree{list-style:none;padding:0 0 0 13px;margin:4px 0;border-left:1px solid var(--theme-border,#e5eaf3)}
 .variable-tree li{padding:3px 0;line-height:1.5}
-.variable-tree summary{cursor:pointer;color:#445585}
+.variable-tree summary{cursor:pointer;color:var(--theme-accent-text,#445585)}
 </style>

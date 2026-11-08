@@ -151,7 +151,7 @@ class StudioScene(Model):
 class Compression(Model):
     full_chapters: int = Field(default=2, ge=0, le=100, description="最近多少章发送完整内容。")
     scene_chapters: int = Field(
-        default=3, ge=0, le=100, description="再往前多少章发送幕设定和演绎，其余发送章节摘要。"
+        default=3, ge=0, le=100, description="再往前多少章发送幕目录和演绎，其余发送章节摘要。"
     )
     snapshot_interval: int = Field(default=5, ge=1, le=100, description="角色快照的确认幕间隔。")
     max_calls: int = Field(default=16, ge=1, le=100, description="一轮 GM 与角色合计模型调用预算。")
@@ -172,10 +172,28 @@ class TurnCheckpoint(Model):
     channel: TurnChannel = "discussion"
 
 
-class GmTemplate(Model):
+ContextMode = Literal["gm", "role", "writing"]
+StudioMode = Literal["creation", "gm", "role", "writing", "writing_chat", "summary"]
+ContextSchemaVersion = Literal["gm-v1", "shared-v1", "role-v1", "writing-v1"]
+
+
+class ContextTemplate(Model):
     id: str = Field(default_factory=identity)
     name: str
     source: str
+    schema_version: ContextSchemaVersion = "gm-v1"
+
+
+class ContextTemplateSet(Model):
+    templates: list[ContextTemplate] = Field(default_factory=list)
+    active_id: str | None = None
+    active: ContextTemplate | None = None
+
+
+class StudioDocumentation(Model):
+    tool_descriptions: dict[str, str] = Field(default_factory=dict)
+    variable_descriptions: dict[str, str] = Field(default_factory=dict)
+    variable_detail: Literal["compact", "full", "off"] = "compact"
 
 
 class StudioNovel(Model):
@@ -197,8 +215,11 @@ class StudioNovel(Model):
     prompts: dict[str, str] = Field(default_factory=dict)
     context_source: str = "{{ data | tojson }}"
     gm_context_source: str | None = None
-    gm_templates: list[GmTemplate] = Field(default_factory=list)
+    gm_templates: list[ContextTemplate] = Field(default_factory=list)
     active_gm_template_id: str | None = None
+    active_gm_template: ContextTemplate | None = None
+    context_template_sets: dict[Literal["role", "writing"], ContextTemplateSet] = Field(default_factory=dict)
+    documentation: dict[StudioMode, StudioDocumentation] = Field(default_factory=dict)
     busy: bool = False
     run_id: str = ""
     running: str = ""

@@ -57,8 +57,8 @@ class Schedule(Model):
 class Edit(Model):
     """增删改资料字段；目标可以用名字定位；创建字段无需生成 ID。设定编辑在重置后保留。"""
 
-    scope: Literal["world", "characters", "creation", "chapters", "scenes"] = Field(
-        description="五类资料之一。"
+    scope: Literal["world", "characters", "creation", "chapters"] = Field(
+        description="世界观、角色、创作要求或章设定。"
     )
     target: str = Field(default="", description="已有实体的名字或 ID；world/creation 留空时针对实体列表。")
     operations: list[NamedFieldEdit | Patch] = Field(
@@ -166,7 +166,7 @@ class ReadProse(Model):
 
 
 class ReadWritingScene(Model):
-    """读取本幕已确认的演绎、角色状态和上一版写作要求。初次生成或整幕重写时先调用。"""
+    """读取章设定、本幕已确认的演绎、角色状态和上一版写作要求。初次生成或整幕重写时先调用。"""
 
 
 class EditProse(Model):
@@ -285,8 +285,9 @@ class TextDecoder:
         return TextResult(text=message.content)
 
 
-def tool_schemas(mode) -> list[dict[str, JsonValue]]:
+def tool_schemas(mode, descriptions: dict[str, str] | None = None) -> list[dict[str, JsonValue]]:
     return [
-        {"name": name, "description": cls.__doc__ or name, "parameters": cls.model_json_schema()}
+        {"name": name, "description": (descriptions or {}).get(name) or cls.__doc__ or name,
+         "parameters": cls.model_json_schema()}
         for name, cls in tools_for(mode).items()
     ]

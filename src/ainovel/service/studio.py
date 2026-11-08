@@ -20,13 +20,18 @@ from ainovel.core.prose_edits import (
     require_revision,
 )
 from ainovel.core.studio import (
+    ContextMode,
+    ContextTemplate,
+    ContextTemplateSet,
     ConversationMessage,
     StudioAction,
+    StudioDocumentation,
     StudioStep,
     ToolOutcome,
     WritingMessage,
     gm_discussion_text,
 )
+from ainovel.core.studio_context import variable_docs
 from ainovel.core.studio_state import (
     apply_field_edits,
     edit_self,
@@ -66,9 +71,51 @@ def defaults():
 
 
 def default_gm_context_source() -> str:
-    return (Path(__file__).resolve().parents[1] / "prompts" / "studio_gm_context.j2").read_text(
-        encoding="utf-8"
-    )
+    return default_context_template("gm").source
+
+
+def default_context_template(mode: ContextMode) -> ContextTemplate:
+    name, version = {
+        "gm": ("内置 GM 模板", "gm-v1"),
+        "role": ("内置角色模板", "role-v1"),
+        "writing": ("内置正文写作模板", "writing-v1"),
+    }[mode]
+    source = DEFAULT_CONTEXT_SOURCE
+    if mode in ("gm", "writing"):
+        path = Path(__file__).resolve().parents[1] / "prompts" / f"studio_{mode}_context.j2"
+        source = path.read_text(encoding="utf-8")
+    return ContextTemplate(id="default", name=name, source=source, schema_version=version)
+
+
+def context_template_set(novel, mode: ContextMode) -> ContextTemplateSet:
+    if mode == "gm":
+        return ContextTemplateSet(
+            templates=novel.gm_templates, active_id=novel.active_gm_template_id, active=novel.active_gm_template
+        )
+    return novel.context_template_sets.get(mode) or ContextTemplateSet()
+
+
+def select_context_template(novel, mode: ContextMode, template_id: str | None) -> ContextTemplate:
+    if template_id is None:
+        if mode == "gm" and novel.gm_context_source is not None:
+            return ContextTemplate(id="legacy", name="原有上下文模板", source=novel.gm_context_source)
+        if novel.context_source.strip() != DEFAULT_CONTEXT_SOURCE:
+            version = "shared-v1" if mode == "gm" else default_context_template(mode).schema_version
+            return ContextTemplate(
+                id="legacy", name="原有上下文模板", source=novel.context_source, schema_version=version
+            )
+        template_id = "default"
+    if template_id == "default":
+        return default_context_template(mode)
+    template = next((item for item in context_template_set(novel, mode).templates if item.id == template_id), None)
+    if template is None:
+        raise ValueError("模板不存在")
+    return template
+
+
+def active_context_template(novel, mode: ContextMode) -> ContextTemplate:
+    templates = context_template_set(novel, mode)
+    return templates.active or select_context_template(novel, mode, templates.active_id)
 
 
 def resolve_character(novel, name, scene=None):
@@ -111,12 +158,22 @@ def gm_turn_messages(messages, draft=None):
 
 def writing_scene_context(novel, scene):
     data = scene_data(scene)
+    chapter = next(chapter for chapter in novel.chapters if chapter.entity.id == scene.chapter_id)
+    data["chapter"] = chapter.entity.model_dump(mode="json")
     participants = {e.actor_id for e in scene.events if e.kind == "enter"}
     data["characters"] = [
         c.model_dump(mode="json") for key, c in role_states(novel, scene).items() if key in participants
     ]
     data["previous_requirements"] = scene.writing_requirements
     return data
+
+
+def writing_context(novel, scene, requirements=""):
+    return {
+        **writing_scene_context(novel, scene),
+        "writing_mode": "rewrite" if scene.text else "generate",
+        "requirements": requirements,
+    }
 
 
 def writing_chat_context(novel, scene):
@@ -129,19 +186,17 @@ def writing_chat_context(novel, scene):
     }
 
 
-def build_request(settings, novel, mode, data, history=None):
+def build_request(settings, novel, mode, data, history=None, *, context_template=None):
     override = novel.prompts.get(mode)
     source = override if override is not None else defaults()[mode]
     context_source = novel.context_source
     context_data = prompt_data = data
+    legacy_layout = False
+    if mode in ("role", "writing") or isinstance(data, GmContext):
+        template = context_template or active_context_template(novel, mode)
+        context_source = template.source
     if isinstance(data, GmContext):
-        selected = novel.active_gm_template_id
-        gm_source = novel.gm_context_source
-        if selected == "default":
-            gm_source = default_gm_context_source()
-        elif selected:
-            gm_source = next(template.source for template in novel.gm_templates if template.id == selected)
-        legacy_layout = gm_source is None and context_source.strip() != DEFAULT_CONTEXT_SOURCE
+        legacy_layout = template.schema_version == "shared-v1"
         context_data = data.model_dump(mode="json")
         prompt_data = context_data
         if legacy_layout or override is not None:
@@ -151,15 +206,22 @@ def build_request(settings, novel, mode, data, history=None):
             if legacy_layout:
                 context_data = legacy
                 history = [Message(role=m.role, content=m.text) for m in data.discussion] + (history or [])
-        if not legacy_layout:
-            context_source = gm_source if gm_source is not None else default_gm_context_source()
     try:
         role_prompt = ENV.from_string(source).render(data=prompt_data)
         context = ENV.from_string(context_source).render(data=context_data)
     except TemplateError as error:
         raise ValueError(f"Jinja 模板无法渲染：{error}") from error
-    schemas = tool_schemas(mode) if mode not in ("writing", "summary") else []
-    # Return schemas remain separate from editable behavior/context templates.
+    docs = novel.documentation.get(mode) or StudioDocumentation()
+    schemas = tool_schemas(mode, docs.tool_descriptions)
+    documentation = {"tool_result_schema": ToolOutcome.model_json_schema()}
+    if schemas:
+        documentation["tool_descriptions"] = {item["name"]: item["description"] for item in schemas}
+    if docs.variable_detail != "off":
+        documentation["variable_schema"] = {
+            path: {**field, "description": docs.variable_descriptions.get(path) or field["description"]}
+            for path, field in variable_docs(mode, shared=legacy_layout).items()
+            if docs.variable_detail == "full" or path.count(".") == 1 or path in docs.variable_descriptions
+        }
     body = ChatBody(
         model=settings.llm_model,
         max_tokens=settings.llm_max_tokens,
@@ -168,7 +230,7 @@ def build_request(settings, novel, mode, data, history=None):
             Message(
                 role="system",
                 content=json.dumps(
-                    {"tool_result_schema": ToolOutcome.model_json_schema()}, ensure_ascii=False
+                    documentation, ensure_ascii=False
                 ),
             ),
             Message(role="user", content=context),
@@ -193,11 +255,15 @@ def build_request(settings, novel, mode, data, history=None):
     )
 
 
+def estimate_text_tokens(text: str) -> int:
+    cjk = len(re.findall(r"[\u3400-\u9fff]", text))
+    return math.ceil(cjk * 1.5 + (len(text) - cjk) / 3.5)
+
+
 def estimate(request):
     text = request.body.model_dump_json(exclude_none=True)
-    cjk = len(re.findall(r"[\u3400-\u9fff]", text))
     return {
-        "input_tokens": math.ceil(cjk * 1.5 + (len(text) - cjk) / 3.5),
+        "input_tokens": estimate_text_tokens(text),
         "method": "中英文字符混合估算，实际以供应商计费为准",
         "characters": len(text),
     }
@@ -228,22 +294,20 @@ def edit_fields(novel, scene, args):
         matches = [
             e
             for e in collection
-            if (e.entity if scope in ("chapters", "scenes") else e).id == target
-            or (e.entity if scope in ("chapters", "scenes") else e).name == target
+            if (e.entity if scope == "chapters" else e).id == target
+            or (e.entity if scope == "chapters" else e).name == target
         ]
         if len(matches) != 1:
             raise ValueError("目标不存在或重名")
         item = matches[0]
-        if scope == "scenes" and (not scene or item.entity.id != scene.entity.id):
-            raise ValueError("只能修改当前幕，历史幕需要分支")
         if scope == "chapters" and scene and item.entity.id != scene.chapter_id:
             raise ValueError("只能修改当前章节资料")
-        entity = item.entity if scope in ("chapters", "scenes") else item
+        entity = item.entity if scope == "chapters" else item
         updated, _ = apply_field_edits(entity.model_dump(mode="json"), args.operations)
         candidate = Entity.model_validate(updated)
         if candidate.id != entity.id:
             raise ValueError("不能修改内部 ID")
-        if scope in ("chapters", "scenes"):
+        if scope == "chapters":
             item.entity = candidate
         else:
             collection[collection.index(item)] = candidate
@@ -650,9 +714,7 @@ class StudioRunner:
         try:
             if mode in ("writing", "summary"):
                 if mode == "writing":
-                    data = writing_scene_context(novel, scene)
-                    data["writing_mode"] = "rewrite" if scene.text else "generate"
-                    data["requirements"] = instruction
+                    data = writing_context(novel, scene, instruction)
                     action = await self.call(mode, data, [])
                     if not action.text.strip():
                         raise ValueError("模型没有返回正文")

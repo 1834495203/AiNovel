@@ -686,13 +686,13 @@
         }
       }
     },
-    "/api/studio/novels/{key}/gm-templates": {
+    "/api/studio/novels/{key}/context-templates": {
       "post": {
         "tags": [
           "角色演绎工作区"
         ],
-        "summary": "Save Gm Template",
-        "operationId": "save_gm_template_api_studio_novels__key__gm_templates_post",
+        "summary": "Save Context Template",
+        "operationId": "save_context_template_api_studio_novels__key__context_templates_post",
         "parameters": [
           {
             "name": "key",
@@ -709,7 +709,111 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GmTemplateSave"
+                "$ref": "#/components/schemas/ContextTemplateSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/gm-templates": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Save Context Template",
+        "operationId": "save_context_template_api_studio_novels__key__gm_templates_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextTemplateSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioNovel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/context-template-selection": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Enable Context Template",
+        "operationId": "enable_context_template_api_studio_novels__key__context_template_selection_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextTemplateSelection"
               }
             }
           }
@@ -743,8 +847,8 @@
         "tags": [
           "角色演绎工作区"
         ],
-        "summary": "Select Gm Template",
-        "operationId": "select_gm_template_api_studio_novels__key__gm_template_selection_post",
+        "summary": "Enable Context Template",
+        "operationId": "enable_context_template_api_studio_novels__key__gm_template_selection_post",
         "parameters": [
           {
             "name": "key",
@@ -761,7 +865,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GmTemplateSelection"
+                "$ref": "#/components/schemas/ContextTemplateSelection"
               }
             }
           }
@@ -790,13 +894,13 @@
         }
       }
     },
-    "/api/studio/novels/{key}/gm-template-preview": {
+    "/api/studio/novels/{key}/context-template-preview": {
       "post": {
         "tags": [
           "角色演绎工作区"
         ],
-        "summary": "Preview Gm Template",
-        "operationId": "preview_gm_template_api_studio_novels__key__gm_template_preview_post",
+        "summary": "Preview Context Template",
+        "operationId": "preview_context_template_api_studio_novels__key__context_template_preview_post",
         "parameters": [
           {
             "name": "key",
@@ -813,7 +917,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GmTemplatePreview"
+                "$ref": "#/components/schemas/ContextTemplatePreview"
               }
             }
           }
@@ -823,7 +927,61 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ContextTemplatePreviewResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/studio/novels/{key}/gm-template-preview": {
+      "post": {
+        "tags": [
+          "角色演绎工作区"
+        ],
+        "summary": "Preview Context Template",
+        "operationId": "preview_context_template_api_studio_novels__key__gm_template_preview_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextTemplatePreview"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextTemplatePreviewResult"
+                }
               }
             }
           },
@@ -4215,7 +4373,7 @@
             "maximum": 100.0,
             "minimum": 0.0,
             "title": "Scene Chapters",
-            "description": "再往前多少章发送幕设定和演绎，其余发送章节摘要。",
+            "description": "再往前多少章发送幕目录和演绎，其余发送章节摘要。",
             "default": 3
           },
           "snapshot_interval": {
@@ -4286,6 +4444,365 @@
         "title": "ContextField",
         "description": "One filled field, without storage definitions or template metadata."
       },
+      "ContextTemplate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "schema_version": {
+            "type": "string",
+            "enum": [
+              "gm-v1",
+              "shared-v1",
+              "role-v1",
+              "writing-v1"
+            ],
+            "title": "Schema Version",
+            "default": "gm-v1"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "source"
+        ],
+        "title": "ContextTemplate"
+      },
+      "ContextTemplatePreview": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "gm",
+              "role",
+              "writing"
+            ],
+            "title": "Mode",
+            "default": "gm"
+          },
+          "scene_id": {
+            "type": "string",
+            "title": "Scene Id",
+            "default": ""
+          },
+          "branch_id": {
+            "type": "string",
+            "title": "Branch Id",
+            "default": ""
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          },
+          "character_id": {
+            "type": "string",
+            "title": "Character Id",
+            "default": ""
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "gm-v1",
+                  "shared-v1",
+                  "role-v1",
+                  "writing-v1"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          },
+          "documentation": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/StudioDocumentation"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "creation",
+                    "gm",
+                    "role",
+                    "writing",
+                    "writing_chat",
+                    "summary"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documentation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "ContextTemplatePreview"
+      },
+      "ContextTemplatePreviewResult": {
+        "properties": {
+          "rendered_context": {
+            "type": "string",
+            "title": "Rendered Context"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "context_tokens": {
+            "type": "integer",
+            "title": "Context Tokens"
+          },
+          "documentation": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Documentation"
+          },
+          "sample": {
+            "type": "boolean",
+            "title": "Sample"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextTemplateRender"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active_error": {
+            "type": "string",
+            "title": "Active Error",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rendered_context",
+          "input_tokens",
+          "context_tokens",
+          "documentation",
+          "sample"
+        ],
+        "title": "ContextTemplatePreviewResult"
+      },
+      "ContextTemplateRender": {
+        "properties": {
+          "rendered_context": {
+            "type": "string",
+            "title": "Rendered Context"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "context_tokens": {
+            "type": "integer",
+            "title": "Context Tokens"
+          },
+          "documentation": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Documentation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rendered_context",
+          "input_tokens",
+          "context_tokens",
+          "documentation"
+        ],
+        "title": "ContextTemplateRender"
+      },
+      "ContextTemplateSave": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "gm",
+              "role",
+              "writing"
+            ],
+            "title": "Mode",
+            "default": "gm"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": ""
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "gm-v1",
+                  "shared-v1",
+                  "role-v1",
+                  "writing-v1"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "name",
+          "source"
+        ],
+        "title": "ContextTemplateSave"
+      },
+      "ContextTemplateSelection": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "gm",
+              "role",
+              "writing"
+            ],
+            "title": "Mode",
+            "default": "gm"
+          },
+          "scene_id": {
+            "type": "string",
+            "title": "Scene Id",
+            "default": ""
+          },
+          "branch_id": {
+            "type": "string",
+            "title": "Branch Id",
+            "default": ""
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          },
+          "character_id": {
+            "type": "string",
+            "title": "Character Id",
+            "default": ""
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "id"
+        ],
+        "title": "ContextTemplateSelection"
+      },
+      "ContextTemplateSet": {
+        "properties": {
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/ContextTemplate"
+            },
+            "type": "array",
+            "title": "Templates"
+          },
+          "active_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Id"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextTemplate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ContextTemplateSet"
+      },
       "ControlRequest": {
         "properties": {
           "version": {
@@ -4297,6 +4814,7 @@
             "enum": [
               "confirm_creation",
               "new_scene",
+              "rename_scene",
               "confirm_scene",
               "reset",
               "branch",
@@ -5115,8 +5633,7 @@
               "world",
               "characters",
               "creation",
-              "chapters",
-              "scenes"
+              "chapters"
             ],
             "title": "Scope"
           },
@@ -5442,6 +5959,30 @@
               }
             ],
             "title": "Gm Context Source"
+          },
+          "documentation": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/StudioDocumentation"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "creation",
+                    "gm",
+                    "role",
+                    "writing",
+                    "writing_chat",
+                    "summary"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documentation"
           }
         },
         "additionalProperties": false,
@@ -6502,122 +7043,6 @@
           "instruction"
         ],
         "title": "GenerateRequest"
-      },
-      "GmTemplate": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "source": {
-            "type": "string",
-            "title": "Source"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "name",
-          "source"
-        ],
-        "title": "GmTemplate"
-      },
-      "GmTemplatePreview": {
-        "properties": {
-          "source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source"
-          },
-          "scene_id": {
-            "type": "string",
-            "title": "Scene Id",
-            "default": ""
-          },
-          "branch_id": {
-            "type": "string",
-            "title": "Branch Id",
-            "default": ""
-          },
-          "message": {
-            "type": "string",
-            "title": "Message",
-            "default": ""
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "source"
-        ],
-        "title": "GmTemplatePreview"
-      },
-      "GmTemplateSave": {
-        "properties": {
-          "version": {
-            "type": "integer",
-            "title": "Version"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id",
-            "default": ""
-          },
-          "name": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "source": {
-            "type": "string",
-            "title": "Source"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "version",
-          "name",
-          "source"
-        ],
-        "title": "GmTemplateSave"
-      },
-      "GmTemplateSelection": {
-        "properties": {
-          "version": {
-            "type": "integer",
-            "title": "Version"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "version",
-          "id"
-        ],
-        "title": "GmTemplateSelection"
       },
       "HTTPValidationError": {
         "properties": {
@@ -9608,6 +10033,30 @@
               }
             ],
             "title": "Gm Context Source"
+          },
+          "documentation": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/StudioDocumentation"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "creation",
+                    "gm",
+                    "role",
+                    "writing",
+                    "writing_chat",
+                    "summary"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documentation"
           }
         },
         "additionalProperties": false,
@@ -10340,6 +10789,37 @@
         ],
         "title": "StudioChapter"
       },
+      "StudioDocumentation": {
+        "properties": {
+          "tool_descriptions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Tool Descriptions"
+          },
+          "variable_descriptions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Variable Descriptions"
+          },
+          "variable_detail": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "full",
+              "off"
+            ],
+            "title": "Variable Detail",
+            "default": "compact"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StudioDocumentation"
+      },
       "StudioFieldTemplate": {
         "properties": {
           "id": {
@@ -10479,7 +10959,7 @@
           },
           "gm_templates": {
             "items": {
-              "$ref": "#/components/schemas/GmTemplate"
+              "$ref": "#/components/schemas/ContextTemplate"
             },
             "type": "array",
             "title": "Gm Templates"
@@ -10494,6 +10974,46 @@
               }
             ],
             "title": "Active Gm Template Id"
+          },
+          "active_gm_template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextTemplate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context_template_sets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ContextTemplateSet"
+            },
+            "propertyNames": {
+              "enum": [
+                "role",
+                "writing"
+              ]
+            },
+            "type": "object",
+            "title": "Context Template Sets"
+          },
+          "documentation": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/StudioDocumentation"
+            },
+            "propertyNames": {
+              "enum": [
+                "creation",
+                "gm",
+                "role",
+                "writing",
+                "writing_chat",
+                "summary"
+              ]
+            },
+            "type": "object",
+            "title": "Documentation"
           },
           "busy": {
             "type": "boolean",
@@ -10665,9 +11185,6 @@
             "$ref": "#/components/schemas/EntityInput"
           },
           "chapters": {
-            "$ref": "#/components/schemas/EntityInput"
-          },
-          "scenes": {
             "$ref": "#/components/schemas/EntityInput"
           }
         },

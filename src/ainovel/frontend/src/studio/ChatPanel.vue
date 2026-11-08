@@ -11,7 +11,16 @@ const turnState=computed(()=>props.writing?'正文和创作字段':'资料、角
 const lastUser=computed(()=>[...props.messages].reverse().find(m=>m.role==='user'));
 function editLast(){editText.value=lastUser.value?.content??'';editing.value=true}
 async function submitEdit(){changing.value=true;try{if(await props.changeTurn?.('edit',editText.value))editing.value=false}finally{changing.value=false}}
-function turnAction(kind:'retry'|'withdraw'){dialog.warning({title:kind==='retry'?'重新运行这一轮？':'撤回这一轮？',content:props.legacyTurn?`这条旧消息没有回退记录。当前${turnState.value}将保留。重试会从当前状态重新运行 AI。`:`将恢复本轮开始前的${turnState.value}，并移除本轮 AI 回复。之后的修改会阻止此操作。`,positiveText:props.legacyTurn?(kind==='retry'?'保留资料并重试':'仅撤回消息'):(kind==='retry'?'恢复并重试':'撤回对话及操作'),negativeText:'取消',onPositiveClick:async()=>{return await props.changeTurn?.(kind)}})}
+function turnAction(kind:'retry'|'withdraw'){
+ const gmRetry=kind==='retry'&&props.created&&!props.writing;
+ const content=props.legacyTurn
+  ? `这条旧消息没有回退记录。当前${turnState.value}将保留。重试会从当前状态重新运行 AI。`
+  : `将恢复本轮开始前的${turnState.value}，并移除本轮 AI 回复。之后的剧情修改会阻止此操作。`;
+ dialog.warning({title:kind==='retry'?'重新运行这一轮？':'撤回这一轮？',
+  content:gmRetry?`${content} 重试会使用当前启用的 GM 模板。`:content,
+  positiveText:props.legacyTurn?(kind==='retry'?'保留资料并重试':'仅撤回消息'):(kind==='retry'?'恢复并重试':'撤回对话及操作'),
+  negativeText:'取消',onPositiveClick:async()=>{return await props.changeTurn?.(kind)}})
+}
 const scroller=ref<HTMLElement|null>(null),input=ref<InstanceType<typeof NInput>|null>(null),nearBottom=ref(true),unread=ref(false);
 function scroll(){if(scroller.value){scroller.value.scrollTop=scroller.value.scrollHeight;unread.value=false}}
 function observe(){const el=scroller.value;if(el)nearBottom.value=el.scrollHeight-el.scrollTop-el.clientHeight<90;if(nearBottom.value)unread.value=false}
@@ -44,9 +53,9 @@ onMounted(()=>nextTick(scroll));
 
 <style scoped>
 .prose-diff{margin-top:8px;font-size:13px}
-.prose-diff summary{cursor:pointer;color:#52628d}
+.prose-diff summary{cursor:pointer;color:var(--theme-accent-text,#52628d)}
 .prose-diff div{display:grid;gap:4px;margin-top:8px}
 .prose-diff del,.prose-diff ins{padding:4px 8px;border-radius:4px;white-space:pre-wrap;overflow-wrap:anywhere}
-.prose-diff del{background:#fcebea;color:#832e31}
-.prose-diff ins{background:#e9f6ee;color:#245a38;text-decoration:none}
+.prose-diff del{background:var(--theme-red-surface,#fcebea);color:var(--theme-red-text,#832e31)}
+.prose-diff ins{background:var(--theme-green-surface,#e9f6ee);color:var(--theme-green-text,#245a38);text-decoration:none}
 </style>

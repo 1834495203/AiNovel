@@ -51,7 +51,7 @@ class NovelContext(Model):
 
 
 class SceneContext(Model):
-    settings: Entity
+    settings: Entity = Field(description="幕标识与名称，旧幕的自定义字段供已保存的模板读取。")
     performance: list[PerformanceEventContext]
     prose: str | None = Field(description="本幕已写正文，幕级前情中省略。")
 
@@ -80,7 +80,8 @@ class DiscussionMessageContext(Model):
 class GmContext(Model):
     novel: NovelContext = Field(description="小说名称、世界观和全书创作要求。")
     characters: list[Entity] = Field(description="当前幕的正式角色名册和对应状态。")
-    current_scene: CurrentSceneContext = Field(description="当前幕的设定、演绎、在场角色和回撤目录。")
+    current_chapter: Entity = Field(description="当前幕所属章节的章设定，含全部自定义字段。")
+    current_scene: CurrentSceneContext = Field(description="当前幕的演绎、在场角色和回撤目录。")
     chapter_scenes: list[Entity] = Field(description="当前章节的幕目录。")
     chapters: list[ChapterContext] = Field(description="当前幕之前的故事，按压缩设置分层。")
     discussion: list[DiscussionMessageContext] = Field(description="本幕较早的幕后讨论，按时间顺序排列。")
@@ -134,6 +135,7 @@ def gm_context(
     target_index = next(
         i for i, chapter in enumerate(novel.chapters) if chapter.entity.id == scene.chapter_id
     )
+    current_chapter = novel.chapters[target_index].entity
     chapters = []
     for index, chapter in enumerate(novel.chapters[: target_index + 1]):
         distance = target_index - index
@@ -164,12 +166,13 @@ def gm_context(
     return GmContext(
         novel=NovelContext(title=novel.title, world=novel.world, creation=novel.creation),
         characters=list(states.values()),
+        current_chapter=current_chapter,
         current_scene=CurrentSceneContext(
             settings=scene.entity,
             performance=performance(scene),
             prose=scene.text,
             chapter_id=scene.chapter_id,
-            chapter_name=novel.chapters[target_index].entity.name,
+            chapter_name=current_chapter.name,
             present=[reference(key) for key in present(scene)],
             rewind=RewindContext.model_validate(timeline_context(scene)),
         ),
@@ -210,6 +213,7 @@ def legacy_gm_data(context: GmContext) -> dict:
     return {
         **context.novel.model_dump(mode="json"),
         "characters": [character.model_dump(mode="json") for character in context.characters],
+        "current_chapter": context.current_chapter.model_dump(mode="json"),
         "chapter_scenes": [item.model_dump(mode="json") for item in context.chapter_scenes],
         "current_scene": {
             **old_scene(current, positions=True),

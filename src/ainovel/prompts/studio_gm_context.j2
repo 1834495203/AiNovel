@@ -54,10 +54,12 @@
 {{ fields(entity) }}
 {%- endfor %}
 {% endif %}
-## 当前幕 · {{ data.current_scene.chapter_name }} / {{ data.current_scene.settings.name }}
-幕 ID {{ data.current_scene.settings.id }}，章 ID {{ data.current_scene.chapter_id }}
+## 当前章 · {{ data.current_chapter.name }}
+章 ID {{ data.current_chapter.id }}
+{{ fields(data.current_chapter) }}
+## 当前幕 · {{ data.current_scene.settings.name }}
+幕 ID {{ data.current_scene.settings.id }}
 在场 {{ data.current_scene.present | length }} 人{% if data.current_scene.present %}：{{ data.current_scene.present | map(attribute='name') | join('、') }}{% endif %}
-{{ fields(data.current_scene.settings) }}
 {% if data.current_scene.performance -%}
 ### 本幕角色群聊和演绎事件
 {{ events(data.current_scene.performance, true) }}
@@ -89,7 +91,6 @@
 {% else -%}
 {% for scene in chapter.scenes -%}
 #### {{ scene.settings.name }}
-{{ fields(scene.settings) }}
 {% if scene.performance -%}
 演绎记录
 {{ events(scene.performance) }}
