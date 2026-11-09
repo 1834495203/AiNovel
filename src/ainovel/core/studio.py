@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import Field, JsonValue, field_validator, model_validator
+from pydantic import ConfigDict, Field, JsonValue, field_validator, model_serializer, model_validator
 
 from ainovel.core.base import Model
 from ainovel.core.entities import Entity
@@ -40,29 +40,51 @@ def gm_discussion_text(content: str) -> str:
 
 
 class Patch(Model):
-    op: Literal["add", "remove", "replace", "test"] = Field(description="JSON Patch 操作。")
+    model_config = ConfigDict(extra="ignore", populate_by_name=False)
+
+    op: Literal["add", "remove", "replace", "move", "copy", "test"] = Field(description="标准 JSON Patch 操作。")
     path: str = Field(description="相对目标的 JSON Pointer 路径，使用 ~0/~1 转义。")
-    value: JsonValue = Field(default=None, description="add/replace/test 的值；remove 无需值。")
+    value: JsonValue = Field(default=None, description="add、replace 和 test 所需的 JSON 值。")
+    from_path: str | None = Field(default=None, alias="from", description="move 或 copy 的来源 JSON Pointer。")
 
-
-class NamedFieldEdit(Model):
-    op: Literal["set_field", "remove_field"]
-    field: str = Field(min_length=1, description="现有描述名称或变量名，按原名填写。")
-    kind: Literal["description", "attribute"] | None = Field(
-        default=None, description="同名时指定描述或变量。"
-    )
-    property: str = Field(
-        default="", description="可选。指定要更新的属性，例如 how 或 visibility；默认更新字段值。"
-    )
-    value: JsonValue = Field(default=None, description="set_field 的新值；remove_field 删除整个字段。")
+    @model_validator(mode="before")
+    @classmethod
+    def ignore_unused_source(cls, data):
+        if isinstance(data, dict) and "from" in data and data.get("op") not in ("move", "copy"):
+            return {key: value for key, value in data.items() if key != "from"}
+        return data
 
     @model_validator(mode="after")
     def validate_operation(self):
-        if self.op == "set_field" and "value" not in self.model_fields_set:
-            raise ValueError("set_field 需要提供 value")
-        if self.op == "remove_field" and self.property:
-            raise ValueError("remove_field 删除整个字段，不能指定 property")
+        if self.op in ("add", "replace", "test") and "value" not in self.model_fields_set:
+            raise ValueError(f"{self.op} 需要提供 value")
+        if self.op in ("move", "copy") and self.from_path is None:
+            raise ValueError(f"{self.op} 需要提供 from")
         return self
+
+    @model_serializer(mode="wrap")
+    def serialize_operation(self, handler):
+        # Keep previously persisted patches unchanged for timeline state hashes.
+        result = handler(self)
+        result.pop("from_path", None)
+        if self.from_path is not None:
+            result["from"] = self.from_path
+        else:
+            result.pop("from", None)
+        return result
+
+
+class ToolOutcome(Model):
+    success: bool = Field(default=True, description="操作是否成功。")
+    message: str = Field(default="", description="结果或可修正的错误。")
+    data: JsonValue = Field(default=None, description="操作产生的数据。")
+    variable_schema: dict[str, JsonValue] | None = Field(default=None, description="成功编辑后，以 JSON Pointer 标记的当前变量 Schema。")
+
+
+class ToolExecution(Model):
+    name: str
+    outcome: ToolOutcome
+    actor: str = ""
 
 
 class StageEvent(Model):
@@ -78,6 +100,8 @@ class ConversationMessage(Model):
     id: str = Field(default_factory=identity)
     role: Literal["user", "assistant"]
     content: str
+    model_reply: bool = False
+    tool_executions: list[ToolExecution] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=now)
 
     @model_validator(mode="before")
@@ -128,6 +152,7 @@ class StudioScene(Model):
     writing_messages: list[WritingMessage] = Field(default_factory=list)
     events: list[StageEvent] = Field(default_factory=list)
     abandoned: list[list[StageEvent]] = Field(default_factory=list)
+    event_tool_executions: dict[str, list[ToolExecution]] = Field(default_factory=dict)
     settings_patches: dict[str, list[Patch]] = Field(default_factory=dict)
     character_patches: dict[str, list[Patch]] = Field(default_factory=dict)
     character_snapshot: dict[str, Entity] | None = None
@@ -195,6 +220,14 @@ class StudioDocumentation(Model):
     variable_descriptions: dict[str, str] = Field(default_factory=dict)
     variable_detail: Literal["compact", "full", "off"] = "compact"
 
+    @field_validator("tool_descriptions")
+    @classmethod
+    def migrate_role_editor_description(cls, descriptions):
+        if "edit_self" in descriptions:
+            descriptions = dict(descriptions)
+            descriptions.setdefault("edit_fields", descriptions.pop("edit_self"))
+        return descriptions
+
 
 class StudioNovel(Model):
     id: str = Field(default_factory=identity)
@@ -230,16 +263,11 @@ class StudioNovel(Model):
     turn_checkpoint: TurnCheckpoint | None = None
 
 
-class ToolOutcome(Model):
-    success: bool = Field(default=True, description="操作是否成功。")
-    message: str = Field(default="", description="结果或可修正的错误。")
-    data: JsonValue = Field(default=None, description="操作产生的数据。")
-
-
 class StudioAction(Model):
     name: str
     call_id: str = ""
     arguments: dict[str, JsonValue] = Field(default_factory=dict)
+    raw_arguments: str | None = None
     text: str = ""
 
 

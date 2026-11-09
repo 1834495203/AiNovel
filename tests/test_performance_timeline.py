@@ -78,7 +78,7 @@ async def test_rewind_restores_roles_fields_presence_events_and_new_characters_b
             return StudioAction(name="leave", arguments={"reason": "丙先离开"})
         if not history:
             return StudioAction(
-                name="edit_self",
+                name="edit_fields",
                 arguments={
                     "operations": [
                         {"op": "replace", "path": "/special_attributes/0/current_value", "value": "警惕"}
@@ -99,6 +99,10 @@ async def test_rewind_restores_roles_fields_presence_events_and_new_characters_b
     # Reloading the aggregate retains the start, operation links and active position.
     n = StudioNovel.model_validate_json(n.model_dump_json())
     scene = n.scenes[-1]
+    edit_event = next(event for event in scene.events if event.kind == "self_edit")
+    leave_event = scene.events[-1]
+    assert scene.event_tool_executions[edit_event.id][0].name == "edit_fields"
+    assert scene.event_tool_executions[leave_event.id][0].outcome.message == "已离场"
     result = rewind(n, scene, steps=1)
     assert result["present_count"] == 1 and present(scene) == [c_id]
     result = rewind(n, scene, target=event_id)
@@ -241,7 +245,7 @@ def test_failed_candidate_never_changes_live_fields_and_rewind_arguments_are_exc
 
     with pytest.raises(ValueError):
         record_change(n, scene, "edit_fields", "失败操作", mutate)
-    assert capture_state(n, scene) == before and scene.timeline.operations == []
+    assert capture_state(n, scene) == before and scene.timeline is None
     with pytest.raises(ValidationError):
         RewindPerformance(steps=1, target="start")
     with pytest.raises(ValidationError):
@@ -326,6 +330,11 @@ async def test_api_rewind_persists_cursor_records_user_edits_and_excludes_privat
     n = await post("/message", scene_id=scene_id, message="回到入场那段")
     assert n["world"] == original_world
     assert len(n["characters"]) == 1 and n["scenes"][-1]["messages"][-1]["content"] == "已回到入场之后"
+    records = n["scenes"][-1]["messages"][-1]["tool_executions"]
+    assert [(call["name"], call["outcome"]["success"]) for call in records] == [
+        ("rewind_performance", True), ("create_character", False),
+    ]
+    assert "未执行" in records[-1]["outcome"]["message"]
     assert n["scenes"][-1]["timeline"]["head"] == timeline["operations"][1]["id"]
     preview = (await client.get(path + "/preview", params={"scene_id": scene_id})).json()
     rendered = preview["rendered_context"]
@@ -347,3 +356,4 @@ async def test_api_rewind_persists_cursor_records_user_edits_and_excludes_privat
     restored = await get()
     assert restored["world"][-1]["name"] == "临时设定"
     assert restored["scenes"][-1]["timeline"]["head"] == timeline["head"]
+    assert all(not message["tool_executions"] for message in restored["scenes"][-1]["messages"])

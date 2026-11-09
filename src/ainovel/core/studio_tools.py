@@ -7,7 +7,7 @@ from pydantic import Field, JsonValue, model_validator
 from ainovel.core.base import Model
 from ainovel.core.entities import Attribute, Description, EntityInput, Visibility
 from ainovel.core.prose_edits import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, ProseEdit
-from ainovel.core.studio import NamedFieldEdit, Patch, StudioAction
+from ainovel.core.studio import Patch, StudioAction
 from ainovel.llm.errors import StructuredOutputError
 
 
@@ -54,28 +54,29 @@ class Schedule(Model):
         return self
 
 
-class Edit(Model):
-    """增删改资料字段；目标可以用名字定位；创建字段无需生成 ID。设定编辑在重置后保留。"""
+class PatchBatch(Model):
+    operations: list[Patch] = Field(
+        min_length=1,
+        max_length=50,
+        description=(
+            "标准 JSON Patch 操作数组，按顺序执行，整批校验通过才保存。"
+            "path 和 from 相对目标文档：空字符串是根路径，数组使用从 0 开始的索引，/- 可追加。"
+            "根据上下文中的当前数据和 Schema 构造 value；失败时根据返回的路径和原因修正后重试。"
+        ),
+    )
+
+
+class Edit(PatchBatch):
+    """用标准 JSON Patch 批量修改目标资料，成功后返回该目标最新的变量 Schema。"""
 
     scope: Literal["world", "characters", "creation", "chapters"] = Field(
         description="世界观、角色、创作要求或章设定。"
     )
     target: str = Field(default="", description="已有实体的名字或 ID；world/creation 留空时针对实体列表。")
-    operations: list[NamedFieldEdit | Patch] = Field(
-        min_length=1,
-        max_length=50,
-        description="修改现有字段时优先使用 set_field 和字段名，删除用 remove_field。新增字段等操作支持 JSON Patch。",
-    )
 
 
-class SelfEdit(Model):
-    """修改自己的可见描述或变量；仅在当前幕生效，演绎重置后撤销。"""
-
-    operations: list[NamedFieldEdit | Patch] = Field(
-        min_length=1,
-        max_length=20,
-        description="可用 set_field 或 remove_field 按名称操作自己的可见字段，也支持 JSON Patch。",
-    )
+class SelfEdit(PatchBatch):
+    """用标准 JSON Patch 批量修改 data.self 中的可见字段并返回最新变量 Schema。演绎重置后撤销。"""
 
 
 class Reset(Model):
@@ -126,12 +127,6 @@ class CreationSay(Say):
     """向用户说明本次整理的构思或提出问题，发言后可以继续整理资料。"""
 
 
-class CreationEdit(Edit):
-    """按用户提供的信息编辑构思资料。支持按字段名修改，也支持 JSON Patch。"""
-
-    scope: Literal["world", "characters", "creation"] = Field(description="世界观、角色资料或创作要求。")
-
-
 class CreationDescription(Description):
     visibility: Visibility = Field(
         default=Visibility.PUBLIC, description="资料可见性：0 仅系统；1 仅所属角色；2 公开。"
@@ -144,13 +139,21 @@ class CreationAttribute(Attribute):
     )
 
 
-class CreationCharacter(EntityInput):
+class CreationEntityInput(EntityInput):
+    description: list[CreationDescription] = Field(default_factory=list, description="描述性资料。")
+    special_attributes: list[CreationAttribute] = Field(
+        default_factory=list, description="需要记录的变量。"
+    )
+
+
+class CreationCharacter(CreationEntityInput):
     """根据用户构思创建人物资料，标识由程序生成；未知信息可以留待后续交流补充。"""
 
-    description: list[CreationDescription] = Field(default_factory=list, description="人物的描述性资料。")
-    special_attributes: list[CreationAttribute] = Field(
-        default_factory=list, description="人物需要记录的变量。"
-    )
+
+class CreationEdit(Edit):
+    """用标准 JSON Patch 批量修改构思资料，成功后返回该目标最新的变量 Schema。"""
+
+    scope: Literal["world", "characters", "creation"] = Field(description="世界观、角色资料或创作要求。")
 
 
 class ReadProse(Model):
@@ -184,7 +187,7 @@ class WriteProse(Model):
 
 
 class WritingEdit(Edit):
-    """编辑「创作」资料，支持按名称修改字段和 JSON Patch。正文编辑使用专门的工具。"""
+    """用标准 JSON Patch 批量编辑创作资料并返回最新变量 Schema。正文编辑使用专门的工具。"""
 
     scope: Literal["creation"] = Field(default="creation", description="只允许操作创作资料。")
 
@@ -199,12 +202,13 @@ TOOLS = {
     "enter_character": Membership,
     "remove_character": Membership,
     "create_character": CreateCharacter,
-    "edit_self": SelfEdit,
     "leave": Leave,
 }
 
 
 def tools_for(mode):
+    if mode == "role":
+        return {"edit_fields": SelfEdit, "leave": Leave}
     if mode == "writing_chat":
         return {
             "read_prose": ReadProse,
@@ -232,8 +236,6 @@ def tools_for(mode):
             "create_character",
         )
         if mode == "gm"
-        else ("edit_self", "leave")
-        if mode == "role"
         else ()
     )
     return {name: TOOLS[name] for name in names}
@@ -265,6 +267,11 @@ class StudioDecoder:
             ids.add(call.id)
             if call.function.name not in self.allowed:
                 raise StructuredOutputError("当前角色不能使用该工具")
+            if call.function.name == "edit_fields":
+                actions.append(StudioAction(
+                    name=call.function.name, call_id=call.id, raw_arguments=call.function.arguments,
+                ))
+                continue
             args = self.allowed[call.function.name].model_validate_json(call.function.arguments)
             actions.append(
                 StudioAction(name=call.function.name, call_id=call.id, arguments=args.model_dump(mode="json"))

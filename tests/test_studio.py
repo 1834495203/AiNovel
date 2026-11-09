@@ -17,6 +17,7 @@ from ainovel.core.studio import (
     StudioChapter,
     StudioNovel,
     StudioScene,
+    StudioStep,
 )
 from ainovel.core.studio_state import (
     apply_patch,
@@ -29,14 +30,13 @@ from ainovel.core.studio_state import (
     role_context,
     role_states,
 )
-from ainovel.core.studio_tools import Edit, tools_for
+from ainovel.core.studio_tools import Edit, StudioDecoder, tools_for
+from ainovel.llm.schemas import ProviderMessage
 from ainovel.service.studio import StudioRunner, build_request, edit_fields, estimate, writing_context
 
 
 def test_creation_request_has_only_creation_tool_descriptions_and_parameters():
-    from ainovel.core.studio_tools import StudioDecoder
     from ainovel.llm.errors import StructuredOutputError
-    from ainovel.llm.schemas import ProviderMessage
 
     n = StudioNovel()
     request = build_request(
@@ -49,6 +49,12 @@ def test_creation_request_has_only_creation_tool_descriptions_and_parameters():
     for stage_term in ("群聊", "入场", "在场", "GM", "演绎", "章节"):
         assert stage_term not in wire
     assert set(tools_for("creation")) == {"say_to_user", "edit_fields", "create_character"}
+    schemas = [tools_for(mode)["edit_fields"].model_json_schema()
+               for mode in ("creation", "gm", "role", "writing_chat")]
+    patch = schemas[0]["$defs"]["Patch"]
+    assert set(patch["properties"]["op"]["enum"]) == {"add", "remove", "replace", "move", "copy", "test"}
+    assert set(patch["properties"]) == {"op", "path", "value", "from"}
+    assert all(schema["$defs"]["Patch"] == patch for schema in schemas)
     with pytest.raises(ValidationError):
         tools_for("creation")["edit_fields"](scope="scenes", operations=[{"op": "remove", "path": "/0"}])
     with pytest.raises(StructuredOutputError):
@@ -89,6 +95,60 @@ async def test_creation_tool_results_do_not_report_performance_state():
         "gm", scene, StudioAction(name="create_character", arguments={"name": "丙"})
     )
     assert "尚未入场" in gm.message
+
+
+@pytest.mark.parametrize("repair", [True, False])
+async def test_creation_can_repair_a_flat_description_and_stops_after_repeated_failures(repair):
+    novel = StudioNovel(busy=True)
+    novel.creation_messages.append(ConversationMessage(role="user", content="记录未来穿越题材"))
+    flat = StudioAction(name="edit_fields", arguments={
+        "scope": "creation",
+        "operations": [{"op": "add", "path": "/-", "value": {
+            "name": "题材", "value": "未来穿越", "visibility": 2,
+        }}],
+    })
+
+    async def actor(mode, data, history, request):
+        if novel.calls == 2:
+            error = json.loads(history[-1].content)
+            assert not error["success"] and "/0/value" in error["message"]
+            assert "字符串数组" in error["message"] and "未来穿越" not in error["message"]
+        if not repair:
+            if novel.calls == 3:
+                return StudioStep(actions=[flat, StudioAction(name="create_character", arguments={"name": "不应创建"})])
+            return flat.model_copy()
+        if novel.calls == 1:
+            return flat
+        if novel.calls == 2:
+            return StudioAction(name="edit_fields", arguments={
+                "scope": "creation", "operations": [{"op": "add", "path": "/-", "value": {
+                    "name": "题材", "type": "creation", "description": [{"name": "方向", "value": ["未来穿越"]}],
+                }}],
+            })
+        if novel.calls == 3:
+            return StudioAction(name="edit_fields", arguments={
+                "scope": "creation", "target": "题材", "operations": [{"op": "add", "path": "/description/-", "value": {
+                    "name": "开场", "value": ["在陌生城市醒来"], "visibility": 2,
+                }}],
+            })
+        return StudioAction(name="reply", text="已记录题材和开场。")
+
+    async def save(_):
+        pass
+
+    await StudioRunner(novel, SimpleNamespace(save=save), Settings(_env_file=None), actor=actor).run("creation")
+    assert not novel.busy and not novel.error
+    reply = novel.creation_messages[-1]
+    if repair:
+        assert novel.calls == 4 and reply.content == "已记录题材和开场。"
+        assert [field.value for field in novel.creation[0].description] == [["未来穿越"], ["在陌生城市醒来"]]
+        assert [call.outcome.success for call in reply.tool_executions] == [False, True, True]
+        assert reply.tool_executions[-1].outcome.variable_schema["/description/1/value"]["items"] == {"type": "string"}
+    else:
+        assert novel.calls == 3 and "连续失败 3 次" in reply.content
+        assert novel.creation == [] and novel.characters == []
+        assert [call.name for call in reply.tool_executions] == ["edit_fields"] * 3 + ["create_character"]
+        assert "未执行" in reply.tool_executions[-1].outcome.message
 
 
 def fixture():
@@ -200,7 +260,7 @@ def test_self_patch_preserves_hidden_fields_and_cannot_promote_to_system():
     assert b.description[0].value == ["乙的秘密"]
 
 
-async def test_named_field_edits_and_scene_local_character_names():
+async def test_field_patches_and_scene_local_character_names():
     novel, scene, character, _ = fixture()
     change_mood = False
 
@@ -211,8 +271,8 @@ async def test_named_field_edits_and_scene_local_character_names():
         assert data["self"]["name"] == "清妍"
         if change_mood and not history:
             return StudioAction(
-                name="edit_self",
-                arguments={"operations": [{"op": "set_field", "field": "情绪", "value": "安心"}]},
+                name="edit_fields",
+                arguments={"operations": [{"op": "replace", "path": "/special_attributes/0/current_value", "value": "安心"}]},
             )
         return StudioAction(name="reply", text="我在。")
 
@@ -227,8 +287,8 @@ async def test_named_field_edits_and_scene_local_character_names():
         target="甲",
         operations=[
             {"op": "replace", "path": "/name", "value": "清妍"},
-            {"op": "remove_field", "field": "公开经历"},
-            {"op": "set_field", "field": "情绪", "value": "警惕"},
+            {"op": "remove", "path": "/description/0"},
+            {"op": "replace", "path": "/special_attributes/0/current_value", "value": "警惕"},
         ],
     )
     await gm("enter_character", character="清妍")
@@ -237,16 +297,16 @@ async def test_named_field_edits_and_scene_local_character_names():
     assert scene.settings_patches[character.id][-1].path == "/special_attributes/0/current_value"
     assert role_states(novel, scene)[character.id].special_attributes[0].current_value == "警惕"
 
-    edits = tools_for("role")["edit_self"]
-    with pytest.raises(ValueError, match="找不到可编辑字段"):
+    edits = tools_for("role")["edit_fields"]
+    with pytest.raises(ValueError, match="路径不存在"):
         edit_self(
             novel,
             scene,
             character.id,
             edits(
                 operations=[
-                    {"op": "set_field", "field": "情绪", "value": "紧张"},
-                    {"op": "remove_field", "field": "系统"},
+                    {"op": "replace", "path": "/special_attributes/0/current_value", "value": "紧张"},
+                    {"op": "remove", "path": "/description/1"},
                 ]
             ).operations,
         )
@@ -268,6 +328,100 @@ def test_patch_atomicity_and_pointer_escaping():
     for path in ("/a~1b/~0key/-1", "/a~1b/~0key/01", "/a~9b"):
         with pytest.raises(ValueError):
             apply_patch(doc, [Patch(op="remove", path=path)])
+
+    copied = Patch.model_validate({"op": "copy", "from": "/a~1b/~0key", "path": "/clone"})
+    assert copied.model_dump()["from"] == "/a~1b/~0key"
+    assert Patch.model_validate({"op": "remove", "path": "/clone", "from": 42}).model_dump() == {
+        "op": "remove", "path": "/clone", "value": None,
+    }
+    operations = [
+        copied,
+        Patch.model_validate({"op": "move", "from": "/clone/0", "path": "/clone/-"}),
+        Patch(op="test", path="/clone", value=[2.0, 1]),
+        Patch(op="remove", path="/a~1b"),
+    ]
+    assert apply_patch(doc, operations) == {"clone": [2, 1]}
+    with pytest.raises(ValueError, match="第 5 条 test"):
+        apply_patch(doc, [*operations, Patch(op="test", path="/clone/1", value=True)])
+    assert doc == {"a/b": {"~key": [1, 2]}}
+    with pytest.raises(ValueError, match="来源的子路径"):
+        apply_patch(doc, [Patch.model_validate({"op": "move", "from": "/a~1b", "path": "/a~1b/new"})])
+    assert apply_patch(doc, [Patch(op="remove", path=""), Patch(op="add", path="", value=None)]) is None
+
+
+async def test_character_patch_can_reference_defaults_from_an_earlier_batch():
+    novel, scene, character, _ = fixture()
+    runner = StudioRunner(novel, None, Settings(_env_file=None))
+
+    async def patch(*operations):
+        return await runner.execute("gm", scene, StudioAction(name="edit_fields", arguments={
+            "scope": "characters", "target": character.id, "operations": list(operations),
+        }))
+
+    await patch({"op": "add", "path": "/description/-", "value": {"name": "发现", "value": ["灯塔"]}})
+    result = await patch(
+        {"op": "test", "path": "/description/3/visibility", "value": 2},
+        {"op": "copy", "from": "/description/3/value", "path": "/description/0/value"},
+    )
+    restored = StudioNovel.model_validate_json(novel.model_dump_json())
+    assert result.success and role_states(restored, restored.scenes[0])[character.id].description[0].value == ["灯塔"]
+
+
+async def test_provider_patch_error_is_retryable_and_schema_tracks_saved_variable_types():
+    novel = StudioNovel()
+    novel.creation_messages.append(ConversationMessage(role="user", content="更新信息"))
+    novel.creation.append(Entity(name="设定"))
+
+    def call(arguments):
+        return StudioDecoder("creation").decode(ProviderMessage(
+            role="assistant",
+            tool_calls=[{"id": f"patch_{novel.calls}", "function": {"name": "edit_fields", "arguments": arguments}}],
+        ))
+
+    def patch(*operations):
+        return call(json.dumps({"scope": "creation", "target": "设定", "operations": operations}))
+
+    async def actor(mode, data, history, request):
+        docs = json.loads(request.body.messages[1].content)["variable_schema"]
+        path = "data.creation[0].special_attributes[0].current_value"
+        if novel.calls == 1:
+            return call('{"scope":')
+        outcome = json.loads(history[-1].content)
+        if novel.calls == 2:
+            assert history[-2].tool_calls[0].function.arguments == '{"scope":'
+            assert not outcome["success"] and "JSON" in outcome["message"]
+            return patch(
+                {"op": "add", "path": "/special_attributes/-",
+                 "value": {"key": "状态", "value_type": "str", "current_value": "好"}},
+                {"op": "move", "path": "/description/-"},
+            )
+        if novel.calls == 3:
+            assert not outcome["success"] and "/operations/1" in outcome["message"] and "from" in outcome["message"]
+            assert path not in docs and not novel.creation[0].special_attributes
+            return patch({"op": "add", "path": "/special_attributes/-",
+                          "value": {"key": "状态", "value_type": "str", "current_value": "好"}})
+        if novel.calls == 4:
+            assert outcome["variable_schema"]["/special_attributes/0/current_value"]["type"] == "string"
+            assert docs[path]["type"] == "string"
+            return patch(
+                {"op": "replace", "path": "/special_attributes/0/value_type", "value": "int"},
+                {"op": "replace", "path": "/special_attributes/0/current_value", "value": 2},
+            )
+        if novel.calls == 5:
+            assert outcome["variable_schema"]["/special_attributes/0/current_value"]["type"] == "integer"
+            assert docs[path]["type"] == "integer"
+            return patch({"op": "remove", "path": "/special_attributes/0"})
+        assert outcome["variable_schema"] == {} and path not in docs
+        return StudioAction(name="reply", text="完成")
+
+    async def save(_):
+        pass
+
+    await StudioRunner(novel, SimpleNamespace(save=save), Settings(_env_file=None), actor=actor).run("creation")
+    assert novel.calls == 6 and not novel.error
+    assert [entry.outcome.success for entry in novel.creation_messages[-1].tool_executions] == [
+        False, False, True, True, True,
+    ]
 
 
 async def test_gm_sends_user_messages_without_yielding_and_roles_return_to_gm():
@@ -326,11 +480,12 @@ async def test_budget_includes_nested_roles_and_preserves_progress():
     await StudioRunner(n, SimpleNamespace(save=save), Settings(_env_file=None), actor=actor).run("gm", s)
     assert n.calls == 2 and not n.busy
     assert "预算" in s.messages[-1].content
+    assert s.messages[-1].tool_executions[0].name == "schedule_characters"
     assert s.events[-1].text == "甲决定等待"
 
 
 def test_schemas_are_small_and_context_jinja_cannot_access_hidden_fields():
-    assert len(tools_for("gm")) == 9 and set(tools_for("role")) == {"edit_self", "leave"}
+    assert len(tools_for("gm")) == 9 and set(tools_for("role")) == {"edit_fields", "leave"}
     assert "id" not in tools_for("gm")["create_character"].model_json_schema()["properties"]
     n, s, a, b = fixture()
     emit(s, "enter", "甲到场", a.id)
@@ -678,7 +833,10 @@ async def test_studio_custom_documentation_is_previewed_and_sent_with_native_too
     current = await update("/control", action="new_scene")
     await update("/message", scene_id=current["scenes"][0]["entity"]["id"], message="看看海面")
     assert seen
-    assert json.loads(seen[0].messages[1].content) == preview["documentation"]
+    live_docs = json.loads(seen[0].messages[1].content)
+    assert live_docs["tool_descriptions"] == preview["documentation"]["tool_descriptions"]
+    assert live_docs["variable_schema"]["data.novel.title"] == preview["documentation"]["variable_schema"]["data.novel.title"]
+    assert live_docs["variable_schema"]["data.novel.world[0].description[0].value"]["description"] == "构思"
     native = next(tool.function.model_dump(mode="json") for tool in seen[0].tools if tool.function.name == "say_to_group")
     assert native["description"] == docs["gm"]["tool_descriptions"]["say_to_group"]
     assert native["parameters"] == default_tool["parameters"]
@@ -842,6 +1000,7 @@ async def test_api_progressive_creation_performance_prose_branch_and_purge(clien
     assert response.status_code == 200, response.text
     n = await get()
     assert n["world"][0]["description"][0]["value"] == ["海上的灯塔都市"] and not n["created"]
+    assert n["creation_messages"][-1]["tool_executions"][0]["name"] == "edit_fields"
     response = await client.post(
         f"/api/studio/novels/{key}/edit",
         json={
@@ -931,6 +1090,22 @@ async def test_creation_requires_conversation_before_confirming(client):
     )
     assert blocked.status_code == 400 and "AI" in blocked.json()["detail"]
     assert not (await client.get(path)).json()["created"]
+
+
+async def test_creation_records_text_only_model_reply_without_inventing_tools(client, monkeypatch):
+    def mock(self, mode, data, history):
+        assert mode == "creation"
+        return StudioAction(name="reply", text="你希望故事是悬疑还是奇幻？")
+
+    monkeypatch.setattr(StudioRunner, "mock", mock)
+    novel = (await client.post("/api/studio/novels", json={})).json()
+    path = f"/api/studio/novels/{novel['id']}"
+    sent = await client.post(path + "/message", json={"version": novel["version"], "message": "帮我想个题材"})
+    assert sent.status_code == 200, sent.text
+    saved = (await client.get(path)).json()
+    reply = saved["creation_messages"][-1]
+    assert reply["role"] == "assistant" and reply["model_reply"] is True
+    assert reply["tool_executions"] == [] and saved["calls"] == 1
 
 
 async def test_templates_initialize_independent_novel_fields_and_export_as_new(client):

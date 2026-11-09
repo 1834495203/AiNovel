@@ -159,6 +159,8 @@ async def test_writing_chat_edits_prose_and_creation_without_changing_gm_discuss
     assert scene["messages"] == original_gm_messages and n["world"] == original_world
     receipt = next(m for m in scene["writing_messages"] if m["changes"])
     assert receipt["changes"] == [{"paragraph": None, "before": "北门", "after": "侧门", "count": 2}]
+    assert [call["name"] for call in receipt["tool_executions"]] == ["read_prose", "edit_prose"]
+    assert receipt["tool_executions"][0]["outcome"]["data"]["matches"] == 2
     assert n["creation"][0]["name"] == "节奏"
     assert n["scenes"][1]["timeline"]["operations"][-1]["origin"] == "writer"
     assert n["chapters"][0]["summary_stale"]

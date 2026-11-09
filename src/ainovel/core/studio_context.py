@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from ainovel.core.base import Model
 from ainovel.core.entities import Entity
@@ -91,6 +91,39 @@ CONTEXT_MODELS = {
     "creation": CreationContext, "gm": GmContext, "role": RoleContext,
     "writing": WritingContext, "writing_chat": WritingChatContext, "summary": SummaryContext,
 }
+
+ATTRIBUTE_JSON_TYPES = {
+    "str": "string", "int": "integer", "float": "number", "bool": "boolean", "list": "array",
+}
+
+
+def entity_variable_schemas(document, path=()):
+    """Use live variable definitions and positions from the visible document."""
+    if isinstance(document, list):
+        for index, item in enumerate(document):
+            yield from entity_variable_schemas(item, (*path, index))
+    elif isinstance(document, dict):
+        if {"id", "description", "special_attributes"} <= document.keys():
+            for index, field in enumerate(document["description"]):
+                yield (*path, "description", index, "value"), {
+                    "type": "array", "items": {"type": "string"}, "description": field["name"],
+                }
+            for index, field in enumerate(document["special_attributes"]):
+                yield (*path, "special_attributes", index, "current_value"), {
+                    "type": ATTRIBUTE_JSON_TYPES[field["value_type"]],
+                    "description": "。".join(filter(None, (field["key"], field["how"]))),
+                }
+        else:
+            for key, value in document.items():
+                yield from entity_variable_schemas(value, (*path, key))
+
+
+def json_pointer(parts) -> str:
+    return "".join("/" + str(part).replace("~", "~0").replace("/", "~1") for part in parts)
+
+
+def document_variable_schema(document) -> dict[str, JsonValue]:
+    return {json_pointer(path): schema for path, schema in entity_variable_schemas(document)}
 
 
 @lru_cache

@@ -104,9 +104,7 @@ def record_change(novel, scene, kind, summary, mutate, *, origin="gm", actor_id=
         raise ValueError("请先恢复小说")
     require_editable(novel, scene)
     before = capture_state(novel, scene)
-    if scene.timeline is None:
-        scene.timeline = PerformanceTimeline(base=before, state_hash=state_hash(before))
-    timeline = scene.timeline
+    timeline = scene.timeline or PerformanceTimeline(base=before, state_hash=state_hash(before))
     if state_hash(before) != timeline.state_hash:
         raise ValueError("当前资料存在未记录的变更，不能覆盖；请从此幕创建分支后继续")
     candidate = novel.model_copy(deep=True)
@@ -115,6 +113,8 @@ def record_change(novel, scene, kind, summary, mutate, *, origin="gm", actor_id=
     after = capture_state(candidate, candidate_scene)
     changes = changes_between(before, after)
     if not changes:
+        if scene.timeline is None:
+            scene.timeline = timeline
         return result, None
     known_events = {event.id for event in scene.events}
     operation = PerformanceOperation(
@@ -131,6 +131,8 @@ def record_change(novel, scene, kind, summary, mutate, *, origin="gm", actor_id=
     timeline.operations.append(operation)
     timeline.head = operation.id
     timeline.state_hash = state_hash(materialized)
+    if scene.timeline is None:
+        scene.timeline = timeline
     return result, operation
 
 

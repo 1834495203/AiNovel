@@ -8,10 +8,11 @@ from uuid import UUID
 
 from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
+from pydantic import TypeAdapter, ValidationError
 
-from ainovel.core.entities import Entity
+from ainovel.core.entities import Entity, visible_entity
 from ainovel.core.gm_context import GmContext, gm_context, legacy_gm_data
-from ainovel.core.performance_timeline import record_change, rewind
+from ainovel.core.performance_timeline import changes_between, record_change, rewind
 from ainovel.core.prose_edits import (
     apply_prose_edits,
     paragraph_ranges,
@@ -24,16 +25,23 @@ from ainovel.core.studio import (
     ContextTemplate,
     ContextTemplateSet,
     ConversationMessage,
+    StageEvent,
     StudioAction,
     StudioDocumentation,
     StudioStep,
+    ToolExecution,
     ToolOutcome,
     WritingMessage,
     gm_discussion_text,
 )
-from ainovel.core.studio_context import variable_docs
+from ainovel.core.studio_context import (
+    document_variable_schema,
+    entity_variable_schemas,
+    json_pointer,
+    variable_docs,
+)
 from ainovel.core.studio_state import (
-    apply_field_edits,
+    apply_patch,
     edit_self,
     emit,
     present,
@@ -44,7 +52,7 @@ from ainovel.core.studio_state import (
     role_states,
 )
 from ainovel.core.studio_templates import initialize_entity
-from ainovel.core.studio_tools import TOOLS, StudioDecoder, TextDecoder, tool_schemas, tools_for
+from ainovel.core.studio_tools import CreationEntityInput, StudioDecoder, TextDecoder, tool_schemas, tools_for
 from ainovel.llm.contracts import CallMetadata, CompletionRequest
 from ainovel.llm.gateway import ModelGateway
 from ainovel.llm.schemas import (
@@ -59,6 +67,8 @@ from ainovel.llm.schemas import (
 from ainovel.llm.transport import OpenAICompatibleTransport
 
 MODES = ("creation", "gm", "role", "writing", "writing_chat", "summary")
+MAX_TOOL_FAILURES = 3
+ENTITY_LIST = TypeAdapter(list[Entity])
 DEFAULT_CONTEXT_SOURCE = "{{ data | tojson }}"
 ENV = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
 ENV.globals.clear()
@@ -147,7 +157,7 @@ def scene_data(scene):
 
 
 def conversation_history(messages):
-    return [Message(role=m.role, content=m.content) for m in messages]
+    return [Message(role=m.role, content=m.content) for m in messages if m.content]
 
 
 def gm_turn_messages(messages, draft=None):
@@ -217,11 +227,20 @@ def build_request(settings, novel, mode, data, history=None, *, context_template
     if schemas:
         documentation["tool_descriptions"] = {item["name"]: item["description"] for item in schemas}
     if docs.variable_detail != "off":
-        documentation["variable_schema"] = {
-            path: {**field, "description": docs.variable_descriptions.get(path) or field["description"]}
-            for path, field in variable_docs(mode, shared=legacy_layout).items()
+        variables = {
+            path: field for path, field in variable_docs(mode, shared=legacy_layout).items()
             if docs.variable_detail == "full" or path.count(".") == 1 or path in docs.variable_descriptions
         }
+        for parts, field in entity_variable_schemas(context_data):
+            path = "data" + "".join(f"[{part}]" if isinstance(part, int) else f".{part}" for part in parts)
+            variables[path] = field
+        documentation["variable_schema"] = {
+            path: {**field, "description": docs.variable_descriptions.get(path) or field["description"]}
+            for path, field in variables.items()
+        }
+        if any(schema["name"] == "edit_fields" for schema in schemas):
+            document_model = CreationEntityInput if mode == "creation" else Entity
+            documentation["document_schema"] = document_model.model_json_schema()
     body = ChatBody(
         model=settings.llm_model,
         max_tokens=settings.llm_max_tokens,
@@ -277,15 +296,17 @@ def edit_fields(novel, scene, args):
         entity = resolve_character(novel, target, scene)
         if scene and scene.character_patches.get(entity.id):
             raise ValueError("该角色已有演绎变化，请先重置演绎再修改其设定")
-        updated, patches = apply_field_edits(entity.model_dump(mode="json"), args.operations)
-        candidate = Entity.model_validate(updated)
+        original = entity.model_dump(mode="json")
+        candidate = Entity.model_validate(apply_patch(original, args.operations))
         if candidate.id != entity.id:
             raise ValueError("不能修改内部 ID")
         characters = role_states(novel, scene).values() if scene else novel.characters
         if any(c.id != entity.id and c.name == candidate.name for c in characters):
             raise ValueError("角色名字重复")
         if scene:
-            scene.settings_patches.setdefault(entity.id, []).extend(patches)
+            patches = changes_between(original, candidate.model_dump(mode="json"))
+            if patches:
+                scene.settings_patches.setdefault(entity.id, []).extend(patches)
         else:
             novel.characters[novel.characters.index(entity)] = candidate
         return candidate.model_dump(mode="json")
@@ -303,8 +324,7 @@ def edit_fields(novel, scene, args):
         if scope == "chapters" and scene and item.entity.id != scene.chapter_id:
             raise ValueError("只能修改当前章节资料")
         entity = item.entity if scope == "chapters" else item
-        updated, _ = apply_field_edits(entity.model_dump(mode="json"), args.operations)
-        candidate = Entity.model_validate(updated)
+        candidate = Entity.model_validate(apply_patch(entity.model_dump(mode="json"), args.operations))
         if candidate.id != entity.id:
             raise ValueError("不能修改内部 ID")
         if scope == "chapters":
@@ -314,15 +334,16 @@ def edit_fields(novel, scene, args):
         return candidate.model_dump(mode="json")
     if scope not in ("world", "creation"):
         raise ValueError("此类别需要指定目标")
-    values, _ = apply_field_edits([e.model_dump(mode="json") for e in collection], args.operations)
-    if not isinstance(values, list):
-        raise ValueError("资料类别必须是实体列表")
+    values = apply_patch([e.model_dump(mode="json") for e in collection], args.operations)
     known = {e.id for e in collection}
-    entities = []
-    for value in values:
-        if isinstance(value, dict) and value.get("id") not in known:
-            value = {key: item for key, item in value.items() if key != "id"}
-        entities.append(Entity.model_validate(value))
+    if isinstance(values, list):
+        values = [
+            {key: item for key, item in value.items() if key != "id"}
+            if isinstance(value, dict) and (not isinstance(value.get("id"), str) or value["id"] not in known)
+            else value
+            for value in values
+        ]
+    entities = ENTITY_LIST.validate_python(values)
     if len({e.id for e in entities}) != len(entities):
         raise ValueError("实体 ID 重复")
     setattr(novel, scope, entities)
@@ -331,6 +352,26 @@ def edit_fields(novel, scene, args):
 
 class BudgetReached(Exception):
     pass
+
+
+class ToolRetryLimit(Exception):
+    pass
+
+
+def tool_validation_message(name: str, error: ValidationError) -> str:
+    issues = error.errors(include_url=False, include_context=False, include_input=False)
+    details = "；".join(f"{json_pointer(issue['loc']) or '根路径'} {issue['msg']}" for issue in issues)
+    if name != "edit_fields":
+        return f"工具参数或资料校验失败。{details}"
+    hint = ""
+    if any(
+        issue["type"] == "extra_forbidden"
+        and issue["loc"] and issue["loc"][-1] in ("value", "visibility")
+        and all(isinstance(part, int) for part in issue["loc"][:-1])
+        for issue in issues
+    ):
+        hint = "描述内容应放在资料的 description 列表中，描述条目的 value 是字符串数组。"
+    return f"校验失败，整批补丁未保存。{details}。{hint}请修正后重新提交。"
 
 
 class StudioRunner:
@@ -356,18 +397,43 @@ class StudioRunner:
             }
         return result
 
-    def send_user_message(self, scene, text, *, writing=False):
+    def send_user_message(self, scene, text, *, writing=False, model_reply=False):
         """Store each actual user-facing message without content-based suppression."""
         if scene is not None and not writing:
             text = gm_discussion_text(text)
         if not text.strip():
-            return False
+            return None
+        kind = WritingMessage if writing else ConversationMessage
+        message = kind(role="assistant", content=text, model_reply=model_reply)
+        self.messages(scene, writing=writing).append(message)
+        return message
+
+    def messages(self, scene, *, writing=False):
         if writing:
-            scene.writing_messages.append(WritingMessage(role="assistant", content=text))
+            return scene.writing_messages
+        return scene.messages if scene else self.novel.creation_messages
+
+    @staticmethod
+    def add_tool_executions(scene, reply, executions):
+        if isinstance(reply, StageEvent):
+            scene.event_tool_executions.setdefault(reply.id, []).extend(executions)
         else:
-            message = ConversationMessage(role="assistant", content=text)
-            (scene.messages if scene else self.novel.creation_messages).append(message)
-        return True
+            reply.tool_executions.extend(executions)
+
+    def attach_pending_tools(self, scene, reply, pending):
+        if reply is not None and pending.tool_executions:
+            self.add_tool_executions(scene, reply, pending.tool_executions)
+            self.messages(scene, writing=isinstance(pending, WritingMessage)).remove(pending)
+            pending.tool_executions.clear()
+
+    def record_tool_execution(self, scene, messages, reply, pending, execution):
+        if reply is not None:
+            self.attach_pending_tools(scene, reply, pending)
+            self.add_tool_executions(scene, reply, [execution])
+        else:
+            if not pending.tool_executions:
+                messages.append(pending)
+            pending.tool_executions.append(execution)
 
     async def save_progress(self):
         if self.novel.turn_checkpoint and self.novel.running.split(" · ")[0] in (
@@ -464,71 +530,30 @@ class StudioRunner:
             )
             direction_id = event.id
         history = []
+        pending = ConversationMessage(role="assistant", content="")
+        failures = {}
         while True:
             data = role_context(self.novel, scene, character.id, current_direction_id=direction_id)
             data["direction"] = direction
             action = await self.call("role", data, history)
-            if isinstance(action, StudioAction) and action.name == "reply":
-                self.change(
-                    scene,
-                    "role_reply",
-                    character.name + "发言",
-                    lambda n, s: emit(s, "role", action.text, character.id),
-                    origin="role",
-                    actor_id=character.id,
-                )
+            final = isinstance(action, StudioAction) and action.name == "reply"
+            reply = self.send_role_message(scene, character, action.text) if final or action.text else None
+            self.attach_pending_tools(scene, reply, pending)
+            if final:
+                scene.event_tool_executions.setdefault(reply.id, [])
                 await self.save_progress()
                 return action.text
-            actions, text = self.begin_step(history, action)
-            if text:
-                self.change(
-                    scene,
-                    "role_reply",
-                    character.name + "发言",
-                    lambda n, s: emit(s, "role", text, character.id),
-                    origin="role",
-                    actor_id=character.id,
-                )
-            departed = False
-            for item in actions:
-                if departed:
-                    outcome = ToolOutcome(success=False, message="角色已离场，未执行")
-                else:
-                    if item.name not in tools_for("role"):
-                        raise ValueError("角色没有此工具权限")
-                    args = TOOLS[item.name].model_validate(item.arguments)
-                    try:
-                        if item.name == "leave":
-                            self.change(
-                                scene,
-                                "leave",
-                                character.name + "离场",
-                                lambda n, s: emit(
-                                    s, "leave", args.reason or character.name + "离场", character.id
-                                ),
-                                origin="role",
-                                actor_id=character.id,
-                            )
-                            departed = True
-                            outcome = ToolOutcome(message="已离场")
-                        else:
-                            edited = self.change(
-                                scene,
-                                "edit_self",
-                                character.name + "更新自身字段",
-                                lambda n, s: edit_self(n, s, character.id, args.operations),
-                                origin="role",
-                                actor_id=character.id,
-                            )
-                            outcome = ToolOutcome(
-                                message="自身状态已修改，仅本次演绎生效" if edited else "字段值未发生变化"
-                            )
-                    except ValueError as error:
-                        outcome = ToolOutcome(success=False, message=str(error))
-                self.tool_result(history, item, outcome)
-                await self.save_progress()
+            departed, _ = await self.execute_reply_tools(
+                "role", scene, history, action, pending, reply, failures, character=character,
+            )
             if departed:
                 return character.name + "已离场"
+
+    def send_role_message(self, scene, character, text):
+        return self.change(
+            scene, "role_reply", character.name + "发言",
+            lambda n, s: emit(s, "role", text, character.id), origin="role", actor_id=character.id,
+        )
 
     @staticmethod
     def begin_step(history, step):
@@ -545,26 +570,100 @@ class StudioRunner:
                     ToolCall(
                         id=item.call_id,
                         function=FunctionCall(
-                            name=item.name, arguments=json.dumps(item.arguments, ensure_ascii=False)
+                            name=item.name,
+                            arguments=(
+                                item.raw_arguments if item.raw_arguments is not None
+                                else json.dumps(item.arguments, ensure_ascii=False)
+                            ),
                         ),
                     )
                     for item in actions
                 ],
             )
         )
-        return actions, text
+        return actions
 
     @staticmethod
     def tool_result(history, action, result):
-        history.append(Message(role="tool", tool_call_id=action.call_id, content=result.model_dump_json()))
+        exclude = {"variable_schema"} if result.variable_schema is None else None
+        history.append(Message(role="tool", tool_call_id=action.call_id, content=result.model_dump_json(exclude=exclude)))
 
-    async def execute(self, mode, scene, action):
+    async def execute_reply_tools(self, mode, scene, history, step, pending, reply, failures, *, character=None):
+        actions = self.begin_step(history, step)
+        messages = self.messages(scene, writing=mode == "writing_chat")
+        actor = character.name if character else ""
+        stopped, rewind_result, last_output = False, None, None
+        retry_limit = None
+        for item in actions:
+            message_count = len(messages)
+            event_count = len(scene.events) if scene else 0
+            try:
+                if retry_limit:
+                    result = ToolOutcome(success=False, message="本轮已达到工具失败次数上限，未执行。")
+                elif stopped:
+                    result = ToolOutcome(success=False, message=(
+                        "角色已离场，未执行" if mode == "role" else "状态已重置或回溯，本批次后续操作未执行"
+                    ))
+                else:
+                    result = await self.execute(mode, scene, item, character=character)
+            except ValidationError as error:
+                result = ToolOutcome(success=False, message=tool_validation_message(item.name, error))
+            except ValueError as error:
+                message = str(error)
+                if item.name == "edit_fields":
+                    message = f"整批补丁未保存。{message} 请修正后重新提交。"
+                result = ToolOutcome(success=False, message=message)
+            except Exception as error:
+                execution = ToolExecution(
+                    name=item.name, actor=actor,
+                    outcome=ToolOutcome(success=False, message=str(error) or "工具执行中断"),
+                )
+                self.record_tool_execution(scene, messages, reply, pending, execution)
+                raise
+            self.tool_result(history, item, result)
+            execution = ToolExecution(name=item.name, actor=actor, outcome=result)
+            output = None
+            if item.name != "schedule_characters":  # Nested role replies own their own records.
+                if len(messages) > message_count:
+                    output = messages[-1]
+                elif scene and len(scene.events) > event_count:
+                    output = scene.events[-1]
+            if output is not None:
+                last_output = output
+            target = reply or output or (last_output if stopped or retry_limit else None)
+            self.record_tool_execution(scene, messages, target, pending, execution)
+            if reply is not None and output is not None:
+                self.add_tool_executions(scene, output, [execution])
+            if result.success:
+                failures.pop(item.name, None)
+                if item.name in ("leave", "reset_performance", "rewind_performance"):
+                    stopped = True
+                    if item.name == "rewind_performance":
+                        rewind_result = (item, result)
+            elif not stopped and retry_limit is None:
+                failures[item.name] = failures.get(item.name, 0) + 1
+                if failures[item.name] >= MAX_TOOL_FAILURES:
+                    retry_limit = ToolRetryLimit(
+                        f"工具 {item.name} 连续失败 {MAX_TOOL_FAILURES} 次，本轮已停止。{result.message}"
+                    )
+            await self.save_progress()
+        if retry_limit:
+            raise retry_limit
+        return stopped, rewind_result
+
+    async def execute(self, mode, scene, action, *, character=None):
         if mode == "gm":
             require_editable(self.novel, scene)
-        if action.name not in tools_for(mode):
+        schema = tools_for(mode).get(action.name)
+        if schema is None:
             raise ValueError("当前模式没有该工具权限")
-        args = tools_for(mode)[action.name].model_validate(action.arguments)
+        args = (
+            schema.model_validate_json(action.raw_arguments) if action.raw_arguments is not None
+            else schema.model_validate(action.arguments)
+        )
         novel = self.novel
+        if mode == "role":
+            return self.execute_role_tool(scene, character, action.name, args)
         if mode == "writing_chat":
             return self.execute_writing(scene, action.name, args)
         if action.name == "rewind_performance":
@@ -605,6 +704,24 @@ class StudioRunner:
             )
         return self.execute_atomic(mode, self.novel, scene, action, args)
 
+    def execute_role_tool(self, scene, character, name, args):
+        if name == "leave":
+            self.change(
+                scene, "leave", character.name + "离场",
+                lambda n, s: emit(s, "leave", args.reason or character.name + "离场", character.id),
+                origin="role", actor_id=character.id,
+            )
+            return ToolOutcome(message="已离场")
+        edited = self.change(
+            scene, "edit_self", character.name + "更新自身字段",
+            lambda n, s: edit_self(n, s, character.id, args.operations), origin="role", actor_id=character.id,
+        )
+        own = visible_entity(role_states(self.novel, scene)[character.id], own=True).model_dump(mode="json")
+        return ToolOutcome(
+            message="自身状态已修改，仅本次演绎生效" if edited else "字段值未发生变化",
+            variable_schema=document_variable_schema(own),
+        )
+
     def execute_writing(self, scene, name, args):
         novel = self.novel
         if novel.deleted or not novel.created or not scene.confirmed:
@@ -627,7 +744,7 @@ class StudioRunner:
                     lambda n, s: edit_fields(n, None, args),
                     origin="writer",
                 )
-            return ToolOutcome(message="创作资料已更新", data=result)
+            return ToolOutcome(message="创作资料已更新", data=result, variable_schema=document_variable_schema(result))
 
         require_writable_prose(novel, scene)
         if name == "edit_prose":
@@ -657,7 +774,7 @@ class StudioRunner:
     def execute_atomic(self, mode, novel, scene, action, args):
         if action.name == "say_to_user":
             text = args.text
-            sent = self.send_user_message(scene, text)
+            sent = self.send_user_message(scene, text) is not None
             if sent:
                 delivery_message = "已发给用户，角色不可见" if mode == "gm" else "消息已发送"
             else:
@@ -691,9 +808,11 @@ class StudioRunner:
                 data=entity.model_dump(mode="json"),
             )
         elif action.name == "edit_fields":
+            result = edit_fields(novel, scene, args)
             return ToolOutcome(
                 message="构思资料已更新" if mode == "creation" else "设定已修改，重置演绎仍保留",
-                data=edit_fields(novel, scene, args),
+                data=result,
+                variable_schema=document_variable_schema(result),
             )
         elif action.name in ("enter_character", "remove_character"):
             character = resolve_character(novel, args.character, scene)
@@ -711,6 +830,8 @@ class StudioRunner:
     async def run(self, mode, scene=None, instruction=""):
         novel = self.novel
         writing_chat = mode == "writing_chat"
+        pending = (WritingMessage if writing_chat else ConversationMessage)(role="assistant", content="")
+        failures = {}
         try:
             if mode in ("writing", "summary"):
                 if mode == "writing":
@@ -729,13 +850,7 @@ class StudioRunner:
                     action = await self.call(mode, data, [])
                     chapter.summary, chapter.summary_stale = action.text, False
             else:
-                messages = (
-                    scene.writing_messages
-                    if writing_chat
-                    else scene.messages
-                    if scene
-                    else novel.creation_messages
-                )
+                messages = self.messages(scene, writing=writing_chat)
                 discussion, active = gm_turn_messages(messages) if mode == "gm" else ([], [])
                 history = active.copy() if mode == "gm" else conversation_history(messages)
                 while True:
@@ -752,31 +867,16 @@ class StudioRunner:
                         }
                     )
                     action = await self.call(mode, data, history)
-                    if isinstance(action, StudioAction) and action.name == "reply":
-                        # Native assistant text replies to the user; no tools means completion.
-                        self.send_user_message(scene, action.text, writing=writing_chat)
+                    final = isinstance(action, StudioAction) and action.name == "reply"
+                    reply = self.send_user_message(scene, action.text, writing=writing_chat, model_reply=final)
+                    self.attach_pending_tools(scene, reply, pending)
+                    if final:
                         break
-                    actions, text = self.begin_step(history, action)
-                    self.send_user_message(scene, text, writing=writing_chat)
-                    restarted = False
-                    rewind_result = None
-                    for item in actions:
-                        if restarted:
-                            result = ToolOutcome(
-                                success=False, message="状态已重置或回溯，本批次后续操作未执行"
-                            )
-                        else:
-                            try:
-                                result = await self.execute(mode, scene, item)
-                            except ValueError as error:
-                                result = ToolOutcome(success=False, message=str(error))
-                        self.tool_result(history, item, result)
-                        if result.success:
-                            restarted = restarted or item.name in ("reset_performance", "rewind_performance")
-                            if item.name == "rewind_performance":
-                                rewind_result = (item, result)
-                        await self.save_progress()
+                    restarted, rewind_result = await self.execute_reply_tools(
+                        mode, scene, history, action, pending, reply, failures,
+                    )
                     if restarted:
+                        failures.clear()
                         if rewind_result:
                             history = active.copy()
                             item, result = rewind_result
@@ -785,7 +885,11 @@ class StudioRunner:
                         else:
                             history = active.copy()
         except BudgetReached:
-            self.send_user_message(scene, "本轮达到调用预算，已暂停并保留进度。", writing=writing_chat)
+            reply = self.send_user_message(scene, "本轮达到调用预算，已暂停并保留进度。", writing=writing_chat)
+            self.attach_pending_tools(scene, reply, pending)
+        except ToolRetryLimit as error:
+            reply = self.send_user_message(scene, str(error), writing=writing_chat)
+            self.attach_pending_tools(scene, reply, pending)
         except Exception as error:
             novel.error = str(error)
         finally:

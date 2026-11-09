@@ -1750,6 +1750,13 @@ export interface components {
             /** Content */
             content: string;
             /**
+             * Model Reply
+             * @default false
+             */
+            model_reply: boolean;
+            /** Tool Executions */
+            tool_executions?: components["schemas"]["ToolExecution"][];
+            /**
              * Created At
              * Format: date-time
              */
@@ -2992,17 +2999,22 @@ export interface components {
         Patch: {
             /**
              * Op
-             * @description JSON Patch 操作。
+             * @description 标准 JSON Patch 操作。
              * @enum {string}
              */
-            op: "add" | "remove" | "replace" | "test";
+            op: "add" | "remove" | "replace" | "move" | "copy" | "test";
             /**
              * Path
              * @description 相对目标的 JSON Pointer 路径，使用 ~0/~1 转义。
              */
             path: string;
-            /** @description add/replace/test 的值；remove 无需值。 */
+            /** @description add、replace 和 test 所需的 JSON 值。 */
             value?: components["schemas"]["JsonValue"];
+            /**
+             * From
+             * @description move 或 copy 的来源 JSON Pointer。
+             */
+            from?: string | null;
         };
         /** PatchPart */
         PatchPart: {
@@ -4761,6 +4773,10 @@ export interface components {
             events?: components["schemas"]["StageEvent"][];
             /** Abandoned */
             abandoned?: components["schemas"]["StageEvent"][][];
+            /** Event Tool Executions */
+            event_tool_executions?: {
+                [key: string]: components["schemas"]["ToolExecution"][];
+            };
             /** Settings Patches */
             settings_patches?: {
                 [key: string]: components["schemas"]["Patch"][];
@@ -4818,6 +4834,41 @@ export interface components {
             returns: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+        };
+        /** ToolExecution */
+        ToolExecution: {
+            /** Name */
+            name: string;
+            outcome: components["schemas"]["ToolOutcome"];
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+        };
+        /** ToolOutcome */
+        ToolOutcome: {
+            /**
+             * Success
+             * @description 操作是否成功。
+             * @default true
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description 结果或可修正的错误。
+             * @default
+             */
+            message: string;
+            /** @description 操作产生的数据。 */
+            data?: components["schemas"]["JsonValue"];
+            /**
+             * Variable Schema
+             * @description 成功编辑后，以 JSON Pointer 标记的当前变量 Schema。
+             */
+            variable_schema?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
         };
         /** Trace */
         Trace: {
@@ -5304,6 +5355,13 @@ export interface components {
             role: "user" | "assistant";
             /** Content */
             content: string;
+            /**
+             * Model Reply
+             * @default false
+             */
+            model_reply: boolean;
+            /** Tool Executions */
+            tool_executions?: components["schemas"]["ToolExecution"][];
             /**
              * Created At
              * Format: date-time

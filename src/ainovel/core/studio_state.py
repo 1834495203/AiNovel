@@ -1,111 +1,120 @@
 """Pure transitions: validated patches, role replay and interval-based visibility."""
 
 import json
+import re
 from copy import deepcopy
 
 from ainovel.core.entities import Entity, visible_entity
-from ainovel.core.studio import NamedFieldEdit, Patch, StageEvent, StudioBranch, StudioNovel, StudioScene
+from ainovel.core.studio import (
+    Patch,
+    StageEvent,
+    StudioBranch,
+    StudioNovel,
+    StudioScene,
+)
+
+_MISSING = object()
+
+
+def _pointer_parts(pointer):
+    if pointer == "":
+        return []
+    if not pointer.startswith("/") or re.search(r"~(?![01])", pointer):
+        raise ValueError("无效的 JSON Pointer")
+    return [key.replace("~1", "/").replace("~0", "~") for key in pointer[1:].split("/")]
+
+
+def _array_index(container, key, *, inserting=False):
+    if inserting and key == "-":
+        return len(container)
+    if not re.fullmatch(r"0|[1-9][0-9]*", key):
+        raise ValueError("列表索引无效")
+    if len(key) > len(str(len(container))):
+        raise ValueError("路径不存在（列表索引越界）")
+    index = int(key)
+    if index >= len(container) + inserting:
+        raise ValueError("路径不存在（列表索引越界）")
+    return index
+
+
+def _pointer_value(document, parts):
+    if document is _MISSING:
+        raise ValueError("路径不存在")
+    for key in parts:
+        if isinstance(document, list):
+            document = document[_array_index(document, key)]
+        elif isinstance(document, dict) and key in document:
+            document = document[key]
+        else:
+            raise ValueError("路径不存在")
+    return document
+
+
+def _same_json(left, right):
+    if type(left) in (int, float) and type(right) in (int, float):
+        return left == right
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(_same_json(left[k], right[k]) for k in left)
+    if isinstance(left, list):
+        return len(left) == len(right) and all(_same_json(a, b) for a, b in zip(left, right))
+    return left == right
+
+
+def _write_pointer(document, parts, op, value=None):
+    if op != "add":
+        _pointer_value(document, parts)
+    if not parts:
+        return _MISSING if op == "remove" else value
+
+    parent = _pointer_value(document, parts[:-1])
+    key = parts[-1]
+    if isinstance(parent, list):
+        index = _array_index(parent, key, inserting=op == "add")
+        if op == "add":
+            parent.insert(index, value)
+        elif op == "remove":
+            parent.pop(index)
+        else:
+            parent[index] = value
+    elif isinstance(parent, dict):
+        if op == "remove":
+            del parent[key]
+        else:
+            parent[key] = value
+    else:
+        raise ValueError("目标的父路径不是对象或列表")
+    return document
 
 
 def apply_patch(document, operations: list[Patch]):
     result = deepcopy(document)
-    for patch in operations:
-        if patch.op != "remove" and "value" not in patch.model_fields_set:
-            raise ValueError("此操作需要 value")
-        if patch.path == "":
-            if patch.op == "remove":
-                raise ValueError("不允许删除根对象")
-            if patch.op == "test":
-                if result != patch.value:
-                    raise ValueError("test 不匹配")
-            else:
-                result = deepcopy(patch.value)
-            continue
-        if not patch.path.startswith("/"):
-            raise ValueError("path 必须是 JSON Pointer")
-        keys = patch.path[1:].split("/")
-        if any("~" in key.replace("~0", "").replace("~1", "") for key in keys):
-            raise ValueError("JSON Pointer 转义无效")
-        keys = [key.replace("~1", "/").replace("~0", "~") for key in keys]
-        parent = result
+    for index, patch in enumerate(operations, start=1):
+        op, path = patch.op, patch.path
         try:
-            for key in keys[:-1]:
-                parent = parent[int(key)] if isinstance(parent, list) else parent[key]
-            key = keys[-1]
-            if isinstance(parent, list):
-                if key == "-" and patch.op == "add":
-                    parent.append(deepcopy(patch.value))
-                    continue
-                if not key.isdigit() or (len(key) > 1 and key.startswith("0")):
-                    raise ValueError("列表索引无效")
-                index = int(key)
-                if index >= len(parent) + (patch.op == "add"):
-                    raise ValueError("列表索引越界")
-                if patch.op == "add":
-                    parent.insert(index, deepcopy(patch.value))
-                elif patch.op == "remove":
-                    parent.pop(index)
-                elif patch.op == "replace":
-                    parent[index] = deepcopy(patch.value)
-                elif parent[index] != patch.value:
+            parts = _pointer_parts(path)
+            if op == "test":
+                if not _same_json(_pointer_value(result, parts), patch.value):
                     raise ValueError("test 不匹配")
-            elif isinstance(parent, dict):
-                if patch.op != "add" and key not in parent:
-                    raise ValueError("路径不存在")
-                if patch.op == "remove":
-                    del parent[key]
-                elif patch.op == "test":
-                    if parent[key] != patch.value:
-                        raise ValueError("test 不匹配")
+            elif op in ("move", "copy"):
+                source = _pointer_parts(patch.from_path)
+                value = _pointer_value(result, source)
+                if op == "move":
+                    if source == parts:
+                        continue
+                    if parts[: len(source)] == source:
+                        raise ValueError("不能移动到来源的子路径")
+                    result = _write_pointer(result, source, "remove")
                 else:
-                    parent[key] = deepcopy(patch.value)
+                    value = deepcopy(value)
+                result = _write_pointer(result, parts, "add", value)
             else:
-                raise ValueError("路径不是容器")
-        except (KeyError, IndexError, TypeError) as error:
-            raise ValueError("patch 路径不存在或类型错误") from error
-    return result
-
-
-def apply_field_edits(document, operations: list[NamedFieldEdit | Patch]):
-    """Resolve names in the working copy and return the replayable JSON Patch."""
-    if all(isinstance(op, Patch) for op in operations):
-        return apply_patch(document, operations), operations
-
-    resolved = []
-    for op in operations:
-        patch = op
-        if isinstance(op, NamedFieldEdit):
-            if not isinstance(document, dict):
-                raise ValueError("按字段名修改时请先指定资料实体")
-            matches = []
-            for kind, section, key, default in (
-                ("description", "description", "name", "value"),
-                ("attribute", "special_attributes", "key", "current_value"),
-            ):
-                entries = document.get(section)
-                if op.kind not in (None, kind) or not isinstance(entries, list):
-                    continue
-                matches.extend(
-                    (f"/{section}/{index}", item, default)
-                    for index, item in enumerate(entries)
-                    if isinstance(item, dict) and item.get(key) == op.field
-                )
-            if not matches:
-                raise ValueError(f"找不到可编辑字段「{op.field}」")
-            if len(matches) > 1:
-                raise ValueError(f"字段「{op.field}」重名，请用 kind 指定描述或变量")
-            path, item, default = matches[0]
-            if op.op == "remove_field":
-                patch = Patch(op="remove", path=path)
-            else:
-                prop = op.property or default
-                if prop not in item:
-                    raise ValueError(f"字段「{op.field}」没有属性「{prop}」")
-                escaped = prop.replace("~", "~0").replace("/", "~1")
-                patch = Patch(op="replace", path=f"{path}/{escaped}", value=op.value)
-        document = apply_patch(document, [patch])
-        resolved.append(patch)
-    return document, resolved
+                result = _write_pointer(result, parts, op, deepcopy(patch.value))
+        except ValueError as error:
+            source_label = f"，来源 {patch.from_path!r}" if op in ("move", "copy") else ""
+            raise ValueError(f"第 {index} 条 {op} 操作失败（路径 {path!r}{source_label}）。{error}") from error
+    return None if result is _MISSING else result
 
 
 def present(scene: StudioScene) -> list[str]:
@@ -203,18 +212,13 @@ def describe_self_edit(before: Entity, after: Entity) -> str:
 
 
 def edit_self(
-    novel: StudioNovel, scene: StudioScene, character_id: str, operations: list[NamedFieldEdit | Patch]
+    novel: StudioNovel, scene: StudioScene, character_id: str, operations: list[Patch]
 ) -> bool:
     before = role_states(novel, scene)[character_id]
     own = visible_entity(before, own=True)
-    if any(
-        isinstance(p, Patch)
-        and not (p.path.startswith("/description/") or p.path.startswith("/special_attributes/"))
-        for p in operations
-    ):
-        raise ValueError("只能修改自己的描述或变量条目")
-    updated, _ = apply_field_edits(own.model_dump(mode="json"), operations)
-    candidate = Entity.model_validate(updated)
+    candidate = Entity.model_validate(apply_patch(own.model_dump(mode="json"), operations))
+    if (candidate.id, candidate.name, candidate.type) != (own.id, own.name, own.type):
+        raise ValueError("角色只能更改自身可见资料，不能更改 ID、名字或类型")
     if candidate == own:
         return False
     description = describe_self_edit(own, candidate)

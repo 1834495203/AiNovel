@@ -81,7 +81,7 @@ async def test_role_leaving_skips_later_state_edits():
             "role",
             ("leave", {}),
             (
-                "edit_self",
+                "edit_fields",
                 {
                     "operations": [
                         {"op": "replace", "path": "/special_attributes/0/current_value", "value": "不应修改"}

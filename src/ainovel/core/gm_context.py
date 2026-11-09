@@ -183,6 +183,7 @@ def gm_context(
                 role=m.role, speaker="用户" if m.role == "user" else "GM", text=m.content
             )
             for m in (scene.messages if discussion is None else discussion)
+            if m.content
         ],
     )
 

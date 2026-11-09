@@ -42,7 +42,7 @@ def test_remaining_tool_sets_keep_role_permissions_separate():
         "create_character",
     }
     assert {t["name"] for t in tool_schemas("creation")} == {"say_to_user", "edit_fields", "create_character"}
-    assert {t["name"] for t in tool_schemas("role")} == {"edit_self", "leave"}
+    assert {t["name"] for t in tool_schemas("role")} == {"edit_fields", "leave"}
 
 
 async def test_gm_speech_tools_have_distinct_audiences_and_report_destination():
@@ -83,6 +83,7 @@ async def test_gm_delivers_tools_then_ends_without_pause_or_extra_calls():
             actions=[
                 StudioAction(name="say_to_group", arguments={"text": "甲，你听见门外响起敲门声。"}),
                 StudioAction(name="say_to_user", arguments={"text": "场景已推进，你可以检查演绎。"}),
+                StudioAction(name="remove_character", arguments={"character": "不存在的角色"}),
             ],
         ),
         StudioAction(name="reply", text="本轮完成"),
@@ -107,8 +108,16 @@ async def test_gm_delivers_tools_then_ends_without_pause_or_extra_calls():
         "本轮完成",
     ]
     assert s.events[-1].text == "甲，你听见门外响起敲门声。"
+    records = s.messages[1].tool_executions
+    assert [(call.name, call.outcome.success) for call in records] == [
+        ("say_to_group", True), ("say_to_user", True), ("remove_character", False),
+    ]
+    assert records[0].outcome.data["event_id"] == s.events[-1].id
+    assert s.event_tool_executions[s.events[-1].id] == records[:1]
+    assert s.messages[2].tool_executions == records[1:2]
+    assert not s.messages[-1].tool_executions
     visible = json.dumps(role_context(n, s, a.id), ensure_ascii=False)
-    assert "我先让角色" not in visible and "本轮完成" not in visible
+    assert "我先让角色" not in visible and "本轮完成" not in visible and "不存在的角色" not in visible
 
 
 async def test_private_direction_and_self_edits_are_ordered_for_writing_and_rewind():
@@ -160,7 +169,7 @@ async def test_private_direction_and_self_edits_are_ordered_for_writing_and_rewi
             text="我去检查。",
             actions=[
                 StudioAction(
-                    name="edit_self",
+                    name="edit_fields",
                     arguments={
                         "operations": [
                             {"op": "replace", "path": "/special_attributes/0/current_value", "value": value}
